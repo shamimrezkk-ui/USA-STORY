@@ -1,0 +1,6 @@
+{
+  "name": "USA Story Cinematic AI",
+  "description": "Professional AI story analyzer, character consistency locker, and cinematic video prompt generator tailored for USA audiences.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
