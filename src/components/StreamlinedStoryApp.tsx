@@ -14,7 +14,8 @@ import {
   Image as ImageIcon,
   AlertCircle,
   BookOpen,
-  Hash
+  Hash,
+  RefreshCw
 } from 'lucide-react';
 import type {
   StoryAnalysis,
@@ -54,6 +55,7 @@ interface StreamlinedStoryAppProps {
   onVoiceLanguageChange: (lang: string) => void;
   selectedModel: string;
   apiKey: string;
+  onApiKeyChange?: (key: string) => void;
   onOpenSettings: () => void;
   onResetAll: () => void;
 }
@@ -84,6 +86,7 @@ export const StreamlinedStoryApp: React.FC<StreamlinedStoryAppProps> = ({
   onVoiceLanguageChange,
   selectedModel,
   apiKey,
+  onApiKeyChange,
   onOpenSettings,
   onResetAll,
 }) => {
@@ -231,19 +234,37 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
     <div className="space-y-6">
       {/* Error Alert */}
       {errorMessage && (
-        <div className="p-4 rounded-xl bg-rose-950/80 border border-rose-500/50 text-rose-200 text-xs flex items-start gap-3 shadow-lg shadow-rose-950/40">
-          <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="font-bold text-rose-300">ত্রুটি (Error)</p>
-            <p className="mt-0.5 leading-relaxed">{errorMessage}</p>
+        <div className="p-4 rounded-xl bg-rose-950/80 border border-rose-500/50 text-rose-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg shadow-rose-950/40">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-bold text-rose-300">বিজ্ঞপ্তি / ত্রুটি (Notification)</p>
+              <p className="mt-0.5 leading-relaxed">{errorMessage}</p>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={onClearError}
-            className="text-rose-400 hover:text-rose-200 font-bold px-2 py-1 text-xs cursor-pointer"
-          >
-            Dismiss
-          </button>
+          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                localStorage.removeItem('gemini_api_key_custom');
+                if (onApiKeyChange) onApiKeyChange('');
+                onClearError();
+                onGenerateAll();
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition-all shadow cursor-pointer"
+              title="Reset any custom key and retry using system built-in AI"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>বিল্ট-ইন AI দিয়ে রিট্রাই</span>
+            </button>
+            <button
+              type="button"
+              onClick={onClearError}
+              className="text-rose-400 hover:text-rose-200 font-bold px-2 py-1 text-xs cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
 

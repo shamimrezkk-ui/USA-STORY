@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import {
+  cleanApiKey,
   testConnection,
   listAvailableModels,
   analyzeStory,
@@ -17,12 +18,14 @@ export const apiRouter = express.Router();
 function getApiKeyFromReq(req: Request): string | undefined {
   const headerKey = req.headers['x-gemini-api-key'];
   if (typeof headerKey === 'string' && headerKey.trim()) {
-    return headerKey.trim();
+    const cleaned = cleanApiKey(headerKey);
+    if (cleaned) return cleaned;
   }
   if (req.body && typeof req.body.apiKey === 'string' && req.body.apiKey.trim()) {
-    return req.body.apiKey.trim();
+    const cleaned = cleanApiKey(req.body.apiKey);
+    if (cleaned) return cleaned;
   }
-  return process.env.GEMINI_API_KEY;
+  return cleanApiKey(process.env.GEMINI_API_KEY);
 }
 
 function formatApiErrorMessage(error: any, fallbackMessage: string): string {
@@ -30,16 +33,22 @@ function formatApiErrorMessage(error: any, fallbackMessage: string): string {
   const raw = typeof error === 'string' ? error : error?.message || String(error);
 
   if (raw.includes('Empty response text')) {
-    return 'Gemini মডেল থেকে প্রতিক্রিয়া পেতে সমস্যা হয়েছিল। আমাদের স্বয়ংক্রিয় ব্যাকআপ সিস্টেম সক্রিয় রয়েছে। দয়া করে আবার জেনারেট বাটনে ক্লিক করুন অথবা সেটিংসে আপনার Gemini API Key চেক করুন। (Empty response from AI model. Automatic resilience active - please click generate again or check your API key in Settings.)';
+    return 'Gemini মডেল থেকে প্রতিক্রিয়া পেতে সমস্যা হয়েছিল। আমাদের স্বয়ংক্রিয় ব্যাকআপ সিস্টেম সক্রিয় রয়েছে। দয়া করে আবার জেনারেট বাটনে ক্লিক করুন। (Empty response from AI model. Automatic resilience active - please click generate again.)';
   }
   if (raw.includes('503') || raw.includes('high demand') || raw.includes('UNAVAILABLE')) {
     return 'Gemini AI সার্ভার সাময়িকভাবে ব্যস্ত (High Traffic Demand)। আমাদের স্বয়ংক্রিয় ফলব্যাক সক্রিয় রয়েছে। অনুগ্রহ করে কয়েক সেকেন্ড পর আবার ক্লিক করুন অথবা সেটিংসে মডেল পরিবর্তন করুন।';
   }
   if (raw.includes('429') || raw.includes('RESOURCE_EXHAUSTED')) {
-    return 'Gemini API রেট লিমিট শেষ হয়েছে। কিছুক্ষণ অপেক্ষা করুন অথবা সেটিংসে আপনার নিজস্ব Gemini API Key যুক্ত করুন। (Rate limit reached. Please wait a moment or configure your own API key in Settings.)';
+    return 'Gemini API সাময়িক রেট লিমিট স্পর্শ করেছে। কিছুক্ষণ পর পুনরায় চেষ্টা করুন অথবা সেটিংসে অন্য মডেল নির্বাচন করুন। (Rate limit reached. Please wait a moment or try another model in Settings.)';
   }
-  if (raw.includes('API_KEY_INVALID') || raw.includes('401') || raw.includes('403')) {
-    return 'Gemini API Key সঠিক নয় বা অনুমতি নেই। দয়া করে সেটিংস থেকে সঠিক API Key যাচাই করুন। (Invalid Gemini API key. Please verify your key in Settings.)';
+  if (
+    raw.includes('API_KEY_INVALID') ||
+    raw.includes('401') ||
+    raw.includes('403') ||
+    raw.includes('API key not valid') ||
+    raw.includes('INVALID_ARGUMENT')
+  ) {
+    return 'Gemini API Key সঠিক নয় বা মেয়াদোত্তীর্ণ। আপনার কোনো নিজস্ব কী না থাকলে Settings থেকে "Use Built-in System AI" বাটন চাপুন। (Invalid API key. If you do not have a custom key, select "Use Built-in System AI" in Settings.)';
   }
 
   try {
@@ -55,10 +64,15 @@ function formatApiErrorMessage(error: any, fallbackMessage: string): string {
 // 1. Test Connection
 apiRouter.post('/test', async (req: Request, res: Response) => {
   try {
-    const apiKey = getApiKeyFromReq(req);
+    const rawCustom = req.headers['x-gemini-api-key'] || req.body?.apiKey;
+    const apiKey = typeof rawCustom === 'string' ? cleanApiKey(rawCustom) : undefined;
     const model = req.body?.model || 'gemini-3.8-flash';
     const result = await testConnection(apiKey, model);
-    res.json(result);
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(400).json(result);
+    }
   } catch (error: any) {
     console.error('API Test Error:', error);
     res.status(400).json({

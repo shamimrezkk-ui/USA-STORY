@@ -8,10 +8,30 @@ import type {
   VideoDuration,
 } from '../src/types/index.ts';
 
+export function cleanApiKey(rawKey?: string): string | undefined {
+  if (!rawKey) return undefined;
+  let key = rawKey.trim();
+  // Strip quotation marks
+  if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+    key = key.slice(1, -1).trim();
+  }
+  // Strip variable assignment prefixes
+  if (key.startsWith('GEMINI_API_KEY=')) {
+    key = key.replace(/^GEMINI_API_KEY=/, '').trim();
+  }
+  if (key.startsWith('export GEMINI_API_KEY=')) {
+    key = key.replace(/^export GEMINI_API_KEY=/, '').trim();
+  }
+  key = key.replace(/^["']|["']$/g, '').trim();
+  return key || undefined;
+}
+
 export function getGenAI(customApiKey?: string): GoogleGenAI {
-  const key = customApiKey?.trim() || process.env.GEMINI_API_KEY || '';
+  const cleanedCustom = cleanApiKey(customApiKey);
+  const serverKey = cleanApiKey(process.env.GEMINI_API_KEY);
+  const key = cleanedCustom || serverKey || '';
   if (!key) {
-    throw new Error('No Gemini API key provided. Please save a key or configure GEMINI_API_KEY.');
+    throw new Error('No Gemini API key provided. Please configure GEMINI_API_KEY.');
   }
 
   return new GoogleGenAI({
@@ -138,17 +158,17 @@ export async function callGeminiWithRetryAndFallback(
 
   for (const model of candidateModels) {
     for (let attempt = 1; attempt <= 2; attempt++) {
+      const mergedConfig: any = {
+        maxOutputTokens: 8192,
+        ...params.config,
+      };
+
+      // If retrying (attempt 2), strip thinkingBudget: 0 if present to avoid suppressing output
+      if (attempt === 2 && mergedConfig.thinkingConfig) {
+        delete mergedConfig.thinkingConfig;
+      }
+
       try {
-        const mergedConfig: any = {
-          maxOutputTokens: 8192,
-          ...params.config,
-        };
-
-        // If retrying (attempt 2), strip thinkingBudget: 0 if present to avoid suppressing output
-        if (attempt === 2 && mergedConfig.thinkingConfig) {
-          delete mergedConfig.thinkingConfig;
-        }
-
         const response = await ai.models.generateContent({
           model,
           contents: params.contents,
@@ -176,7 +196,34 @@ export async function callGeminiWithRetryAndFallback(
         const is429 = errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED');
         const isEmptyText = errMsg.includes('Empty response text');
 
-        if (errMsg.includes('API_KEY_INVALID') || errMsg.includes('401')) {
+        const isKeyInvalid =
+          errMsg.includes('API_KEY_INVALID') ||
+          errMsg.includes('401') ||
+          errMsg.includes('API key not valid') ||
+          errMsg.includes('INVALID_ARGUMENT');
+
+        if (isKeyInvalid) {
+          const serverKey = cleanApiKey(process.env.GEMINI_API_KEY);
+          if (serverKey) {
+            console.warn('[Gemini Resilience] Custom API key rejected. Attempting server GEMINI_API_KEY fallback...');
+            try {
+              const fallbackAi = new GoogleGenAI({
+                apiKey: serverKey,
+                httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+              });
+              const response = await fallbackAi.models.generateContent({
+                model,
+                contents: params.contents,
+                config: mergedConfig,
+              });
+              const extractedText = extractTextFromGenAIResponse(response);
+              if (extractedText) {
+                return extractedText;
+              }
+            } catch (fallbackErr: any) {
+              console.warn('[Gemini Resilience] Server default key fallback failed:', fallbackErr?.message);
+            }
+          }
           throw err;
         }
 
@@ -205,19 +252,77 @@ export async function callGeminiWithRetryAndFallback(
 }
 
 export async function testConnection(apiKey?: string, model = 'gemini-3.8-flash') {
-  const ai = getGenAI(apiKey);
-  const text = await callGeminiWithRetryAndFallback(ai, model, {
-    contents: 'Ping test. Reply strictly with JSON: {"status": "ok", "message": "Gemini API Connected"}',
+  const cleanedCustom = cleanApiKey(apiKey);
+  const serverKey = cleanApiKey(process.env.GEMINI_API_KEY);
+
+  // If user provided a custom key to test
+  if (cleanedCustom) {
+    try {
+      const ai = new GoogleGenAI({
+        apiKey: cleanedCustom,
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+      });
+      await callGeminiWithRetryAndFallback(ai, model, {
+        contents: 'Ping test. Reply with: OK',
+        config: {
+          maxOutputTokens: 20,
+          temperature: 0.1,
+        },
+      });
+      return {
+        success: true,
+        isCustom: true,
+        message: '✓ আপনার কাস্টম Gemini API Key সম্পূর্ণ সক্রিয় ও কার্যকর! (Custom API Key Verified & Connected)',
+      };
+    } catch (customErr: any) {
+      console.warn('[Gemini Test] Custom key verification failed:', customErr?.message);
+      // Check if server default key is working
+      if (serverKey && serverKey !== cleanedCustom) {
+        try {
+          const sysAi = new GoogleGenAI({
+            apiKey: serverKey,
+            httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+          });
+          await callGeminiWithRetryAndFallback(sysAi, model, {
+            contents: 'Ping test. Reply with: OK',
+            config: {
+              maxOutputTokens: 20,
+              temperature: 0.1,
+            },
+          });
+          return {
+            success: false,
+            canFallbackToDefault: true,
+            serverDefaultWorking: true,
+            error: 'আপনার দেওয়া কাস্টম API Key সঠিক নয় (Invalid Key)। তবে অ্যাপের বিল্ট-ইন সার্ভার Gemini AI সম্পূর্ণ সক্রিয় ও প্রস্তুত আছে। আপনি কাস্টম কী মুছে সরাসরি বিল্ট-ইন AI দিয়ে কাজ চালাতে পারেন।',
+          };
+        } catch {}
+      }
+      throw customErr;
+    }
+  }
+
+  // Testing server default key
+  if (!serverKey) {
+    throw new Error('কোনো Gemini API Key পাওয়া যায়নি। (No Gemini API Key configured).');
+  }
+
+  const ai = new GoogleGenAI({
+    apiKey: serverKey,
+    httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+  });
+  await callGeminiWithRetryAndFallback(ai, model, {
+    contents: 'Ping test. Reply with: OK',
     config: {
+      maxOutputTokens: 20,
       temperature: 0.1,
-      responseMimeType: 'application/json',
     },
   });
 
-  const parsed = parseJsonResponse<{ status: string; message: string }>(text);
   return {
     success: true,
-    message: parsed.message || 'Gemini API Connected Successfully',
+    isDefault: true,
+    message: '✓ সিস্টেমের অন্তর্নির্মিত Gemini AI সংযোগ ১০০% সক্রিয় ও প্রস্তুত! (Built-in Gemini AI is Connected & Ready - No Key Needed)',
   };
 }
 

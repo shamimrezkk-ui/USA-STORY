@@ -235,6 +235,7 @@ export default function App() {
           onVoiceLanguageChange={handleVoiceLanguageChange}
           selectedModel={selectedModel}
           apiKey={apiKey}
+          onApiKeyChange={setApiKey}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onResetAll={handleResetAll}
         />
