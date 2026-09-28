@@ -1,8 +1,8 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { createServer as createViteServer } from 'vite';
 import { apiRouter } from './server/apiRouter.ts';
 
 dotenv.config();
@@ -19,14 +19,24 @@ async function startServer() {
   // Mount Gemini API endpoints
   app.use('/api/gemini', apiRouter);
 
-  if (process.env.NODE_ENV === 'production') {
-    const distPath = path.join(__dirname, 'dist');
+  // Health check endpoint for container liveness / readiness probes
+  app.get('/healthz', (_req, res) => {
+    res.status(200).json({ status: 'ok', uptime: process.uptime() });
+  });
+
+  const distPath = path.join(__dirname, 'dist');
+  const distHtmlPath = path.join(distPath, 'index.html');
+  const isProduction = process.env.NODE_ENV === 'production' || fs.existsSync(distHtmlPath);
+
+  if (isProduction && fs.existsSync(distHtmlPath)) {
+    console.log('[Server] Serving production static build from dist/');
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      res.sendFile(distHtmlPath);
     });
   } else {
-    // In dev mode, mount Vite with middlewares
+    console.log('[Server] Starting Vite in dev middleware mode...');
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
