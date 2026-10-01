@@ -1,50 +1,30 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Mic, 
-  Sparkles, 
-  Check, 
-  AlertCircle, 
-  Languages, 
-  Loader2,
-  Volume2,
-  Trash2,
+import {
+  Mic,
+  Languages,
+  Sparkles,
   BookOpen,
-  ChevronDown
+  ChevronDown,
+  Trash2,
+  Volume2,
+  Check,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react';
-import { apiFormatVoiceTranscript } from '../services/apiClient.ts';
 import { SAMPLE_STORIES } from '../data/sampleStories.ts';
+import { apiFormatVoiceTranscript } from '../services/apiClient.ts';
 
-// Type definitions for Web Speech API
-interface SpeechRecognitionEventLike {
-  resultIndex: number;
-  results: {
-    length: number;
-    [index: number]: {
-      isFinal: boolean;
-      length: number;
-      [index: number]: {
-        transcript: string;
-      };
-    };
-  };
-}
-
-interface SpeechRecognitionErrorEventLike {
-  error: string;
-  message?: string;
-}
-
-interface CompactVoiceToolbarProps {
+interface VoiceInputControllerProps {
   currentStoryText: string;
-  onUpdateStoryText: (newText: string) => void;
+  onUpdateStoryText: (text: string) => void;
   voiceLanguage: string;
   onVoiceLanguageChange: (lang: string) => void;
   selectedModel: string;
-  apiKey?: string;
+  apiKey: string;
   disabled?: boolean;
 }
 
-export const VoiceInputController: React.FC<CompactVoiceToolbarProps> = ({
+export const VoiceInputController: React.FC<VoiceInputControllerProps> = ({
   currentStoryText,
   onUpdateStoryText,
   voiceLanguage,
@@ -53,76 +33,50 @@ export const VoiceInputController: React.FC<CompactVoiceToolbarProps> = ({
   apiKey,
   disabled = false,
 }) => {
-  const [isListening, setIsListening] = useState(false);
-  const [interimTranscript, setInterimTranscript] = useState('');
-  const [sessionTranscript, setSessionTranscript] = useState('');
+  const [isListening, setIsListening] = useState<boolean>(false);
+  const [interimTranscript, setInterimTranscript] = useState<string>('');
+  const [sessionTranscript, setSessionTranscript] = useState<string>('');
+  const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
   const [insertMode, setInsertMode] = useState<'append' | 'replace'>('append');
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
-  const [isFormatting, setIsFormatting] = useState(false);
+  const [isFormatting, setIsFormatting] = useState<boolean>(false);
   const [formatSuccessMessage, setFormatSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isSupported, setIsSupported] = useState(true);
-  const [showSampleMenu, setShowSampleMenu] = useState(false);
+  const [showSampleMenu, setShowSampleMenu] = useState<boolean>(false);
 
   const recognitionRef = useRef<any>(null);
-  const isListeningRef = useRef(false);
   const timerRef = useRef<any>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Check speech recognition support
+  // Close sample menu on outside click
   useEffect(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setIsSupported(false);
-    }
-  }, []);
-
-  // Timer counter when recording
-  useEffect(() => {
-    if (isListening) {
-      setRecordingSeconds(0);
-      timerRef.current = setInterval(() => {
-        setRecordingSeconds((prev) => prev + 1);
-      }, 1000);
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [isListening]);
-
-  // Keep ref updated
-  useEffect(() => {
-    isListeningRef.current = isListening;
-  }, [isListening]);
-
-  // Click outside to close sample menu
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setShowSampleMenu(false);
       }
-    };
+    }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const startListening = () => {
-    setErrorMessage(null);
-    setFormatSuccessMessage(null);
+  // Timer while recording
+  useEffect(() => {
+    if (isListening) {
+      timerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => prev + 1);
+      }, 1000);
+    } else {
+      clearInterval(timerRef.current);
+      setRecordingSeconds(0);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [isListening]);
 
+  // Initialize SpeechRecognition
+  useEffect(() => {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      setErrorMessage(
-        'Speech recognition requires Chrome, Edge, or Safari. You can still type directly in Bangla, Banglish or English.'
-      );
       return;
     }
 
@@ -130,90 +84,109 @@ export const VoiceInputController: React.FC<CompactVoiceToolbarProps> = ({
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang = voiceLanguage || 'bn-BD';
-      recognition.maxAlternatives = 1;
+      recognition.lang = voiceLanguage;
 
       recognition.onstart = () => {
         setIsListening(true);
+        setErrorMessage(null);
       };
 
-      recognition.onresult = (event: SpeechRecognitionEventLike) => {
+      recognition.onresult = (event: any) => {
         let currentInterim = '';
-        let finalChunk = '';
+        let currentFinal = '';
 
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          const res = event.results[i];
-          if (res.isFinal) {
-            finalChunk += res[0].transcript + ' ';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcriptPiece = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            currentFinal += transcriptPiece + ' ';
           } else {
-            currentInterim += res[0].transcript;
+            currentInterim += transcriptPiece;
           }
         }
 
-        if (currentInterim) {
-          setInterimTranscript(currentInterim);
-        }
+        setInterimTranscript(currentInterim);
 
-        if (finalChunk.trim()) {
-          const cleanFinal = finalChunk.trim();
-          setSessionTranscript((prev) => (prev ? `${prev} ${cleanFinal}` : cleanFinal));
-          setInterimTranscript('');
+        if (currentFinal.trim()) {
+          setSessionTranscript((prev) => (prev ? `${prev} ${currentFinal.trim()}` : currentFinal.trim()));
 
+          // Update parent state based on insert mode
           if (insertMode === 'replace') {
-            onUpdateStoryText(cleanFinal);
+            onUpdateStoryText(currentFinal.trim());
           } else {
-            onUpdateStoryText(
-              currentStoryText.trim()
-                ? `${currentStoryText.trim()}\n\n${cleanFinal}`
-                : cleanFinal
-            );
+            // Append mode
+            const baseText = currentStoryText.trim();
+            const newText = baseText
+              ? `${baseText} ${currentFinal.trim()}`
+              : currentFinal.trim();
+            onUpdateStoryText(newText);
           }
         }
       };
 
-      recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
-        console.warn('Speech recognition error:', event.error);
+      recognition.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error);
         if (event.error === 'not-allowed') {
-          setErrorMessage('Microphone access denied. Please allow microphone permission in your browser.');
-          stopListening();
-        } else if (event.error === 'network') {
-          setErrorMessage('Speech network error. Please verify internet connection.');
-          stopListening();
+          setErrorMessage('Microphone access denied. Please allow microphone permissions in your browser.');
+        } else if (event.error !== 'no-speech') {
+          setErrorMessage(`Speech recognition error: ${event.error}`);
         }
+        setIsListening(false);
       };
 
       recognition.onend = () => {
-        if (isListeningRef.current) {
-          try {
-            recognition.start();
-          } catch (e) {
-            setIsListening(false);
-          }
-        } else {
-          setIsListening(false);
-        }
+        setIsListening(false);
+        setInterimTranscript('');
       };
 
       recognitionRef.current = recognition;
-      recognition.start();
-    } catch (err: any) {
-      console.error('Failed to start speech recognition:', err);
-      setErrorMessage(err.message || 'Microphone activation failed.');
-      setIsListening(false);
+    } catch (err) {
+      console.error('Failed to initialize speech recognition:', err);
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, [voiceLanguage, insertMode, currentStoryText, onUpdateStoryText]);
+
+  const startListening = () => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setErrorMessage('Speech recognition is not supported in this browser. Please use Google Chrome or Microsoft Edge.');
+      return;
+    }
+
+    if (recognitionRef.current) {
+      try {
+        setErrorMessage(null);
+        setInterimTranscript('');
+        recognitionRef.current.lang = voiceLanguage;
+        recognitionRef.current.start();
+      } catch (err: any) {
+        console.error('Recognition start error:', err);
+        if (err.message && err.message.includes('already started')) {
+          recognitionRef.current.stop();
+        }
+      }
     }
   };
 
   const stopListening = () => {
-    isListeningRef.current = false;
-    setIsListening(false);
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
-      } catch (e) {
+      } catch {
         // ignore
       }
-      recognitionRef.current = null;
     }
+    setIsListening(false);
     setInterimTranscript('');
   };
 
@@ -225,11 +198,10 @@ export const VoiceInputController: React.FC<CompactVoiceToolbarProps> = ({
     }
   };
 
-  // AI Polish & Format for Spoken Bangla & Banglish
   const handleFormatSpokenStory = async () => {
-    const textToFormat = sessionTranscript.trim() || currentStoryText.trim();
+    const textToFormat = (currentStoryText || sessionTranscript).trim();
     if (!textToFormat) {
-      setErrorMessage('Please type or record a story first.');
+      setErrorMessage('No story text available to format.');
       return;
     }
 
@@ -247,7 +219,7 @@ export const VoiceInputController: React.FC<CompactVoiceToolbarProps> = ({
 
       if (res.formattedText) {
         onUpdateStoryText(res.formattedText);
-        setFormatSuccessMessage(`✓ পরিমার্জিত: ${res.detectedLanguage}`);
+        setFormatSuccessMessage(`✓ Polished: ${res.detectedLanguage || 'English'}`);
         setTimeout(() => setFormatSuccessMessage(null), 4000);
       }
     } catch (err: any) {
@@ -285,12 +257,12 @@ export const VoiceInputController: React.FC<CompactVoiceToolbarProps> = ({
                 ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-950/50 ring-2 ring-rose-400 animate-pulse'
                 : 'bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/40 hover:border-rose-500/60'
             }`}
-            title="Start / Stop Voice-to-Text in Bangla"
+            title="Start / Stop Voice Dictation"
           >
             {isListening ? (
               <>
                 <span className="w-2 h-2 rounded-full bg-white animate-ping" />
-                <span>শুনছি ({formatTimer(recordingSeconds)}) • থামুন</span>
+                <span>Listening ({formatTimer(recordingSeconds)}) • Stop</span>
                 {/* Mini audio wave */}
                 <div className="flex items-center gap-0.5 ml-0.5">
                   <span className="w-0.5 h-2.5 bg-white rounded-full animate-bounce [animation-delay:0ms]" />
@@ -301,33 +273,61 @@ export const VoiceInputController: React.FC<CompactVoiceToolbarProps> = ({
             ) : (
               <>
                 <Mic className="w-3.5 h-3.5 text-rose-400" />
-                <span>ভয়েস ইনপুট (Voice)</span>
+                <span>Voice Input</span>
               </>
             )}
           </button>
 
-          {/* Voice Language Selector */}
-          <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-[11px]">
-            <Languages className="w-3 h-3 text-amber-400 shrink-0" />
-            <select
-              value={voiceLanguage}
-              onChange={(e) => {
-                onVoiceLanguageChange(e.target.value);
+          {/* Voice Language Selector: 1-Click Bengali / English-Banglish Toggle */}
+          <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-[11px]">
+            <button
+              type="button"
+              onClick={() => {
+                onVoiceLanguageChange('bn-BD');
                 if (isListening) stopListening();
               }}
               disabled={isListening || disabled}
-              className="bg-transparent text-amber-300 font-semibold focus:outline-none cursor-pointer pr-1"
+              className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                voiceLanguage === 'bn-BD'
+                  ? 'bg-rose-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="বাংলা ভয়েস ইনপুট (Bengali - Bangladesh)"
             >
-              <option value="bn-BD" className="bg-slate-900 text-slate-200">
-                বাংলা (BD)
-              </option>
-              <option value="bn-IN" className="bg-slate-900 text-slate-200">
-                বাংলা (IN)
-              </option>
-              <option value="en-US" className="bg-slate-900 text-slate-200">
-                English (US)
-              </option>
-            </select>
+              🇧🇩 বাংলা
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onVoiceLanguageChange('en-US');
+                if (isListening) stopListening();
+              }}
+              disabled={isListening || disabled}
+              className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                voiceLanguage === 'en-US'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="English / Banglish Voice Input (US)"
+            >
+              🇺🇸 English / বাংলিশ
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onVoiceLanguageChange('bn-IN');
+                if (isListening) stopListening();
+              }}
+              disabled={isListening || disabled}
+              className={`px-1.5 py-0.5 rounded font-semibold transition-all cursor-pointer ${
+                voiceLanguage === 'bn-IN'
+                  ? 'bg-rose-700 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-300'
+              }`}
+              title="বাংলা (ভারত / IN)"
+            >
+              🇮🇳 IN
+            </button>
           </div>
 
           {/* Insert Mode Toggle */}
@@ -340,9 +340,9 @@ export const VoiceInputController: React.FC<CompactVoiceToolbarProps> = ({
                   ? 'bg-slate-800 text-rose-300 font-bold'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
-              title="Append speech to end of story"
+              title="Append speech to end of current story"
             >
-              +যুক্ত
+              +Append
             </button>
             <button
               type="button"
@@ -354,7 +354,7 @@ export const VoiceInputController: React.FC<CompactVoiceToolbarProps> = ({
               }`}
               title="Replace entire story with speech"
             >
-              নতুন
+              New
             </button>
           </div>
 
@@ -364,15 +364,14 @@ export const VoiceInputController: React.FC<CompactVoiceToolbarProps> = ({
             onClick={handleFormatSpokenStory}
             disabled={isFormatting || isListening || (!currentStoryText.trim() && !sessionTranscript.trim())}
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-850 text-indigo-300 hover:text-indigo-200 border border-indigo-500/30 text-xs font-semibold transition-all cursor-pointer disabled:opacity-40"
-            title="Clean up and format spoken transcript with Gemini"
+            title="Clean up grammar and format spoken transcript with Gemini"
           >
             {isFormatting ? (
               <Loader2 className="w-3 h-3 text-indigo-400 animate-spin" />
             ) : (
               <Sparkles className="w-3 h-3 text-indigo-400" />
             )}
-            <span className="hidden sm:inline">পরিমার্জন (Polish)</span>
-            <span className="sm:hidden">Polish</span>
+            <span>Polish Narrative</span>
           </button>
         </div>
 
@@ -386,14 +385,14 @@ export const VoiceInputController: React.FC<CompactVoiceToolbarProps> = ({
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-850 text-slate-300 hover:text-slate-100 border border-slate-800 text-xs font-medium transition-all cursor-pointer"
             >
               <BookOpen className="w-3 h-3 text-amber-400" />
-              <span>নমুনা গল্প (Samples)</span>
+              <span>Sample Stories</span>
               <ChevronDown className="w-3 h-3 text-slate-400" />
             </button>
 
             {showSampleMenu && (
               <div className="absolute right-0 top-full mt-1.5 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1 z-30 animate-fadeIn">
                 <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800">
-                  Select a test story:
+                  Select a sample story:
                 </div>
                 {SAMPLE_STORIES.map((sample) => (
                   <button
@@ -410,18 +409,16 @@ export const VoiceInputController: React.FC<CompactVoiceToolbarProps> = ({
             )}
           </div>
 
-          {/* Quick Clear Button */}
+          {/* Quick Clear Input Text Button */}
           {currentStoryText.trim() && (
             <button
               type="button"
               onClick={() => {
-                if (confirm('Clear current story text?')) {
-                  onUpdateStoryText('');
-                  setSessionTranscript('');
-                }
+                onUpdateStoryText('');
+                setSessionTranscript('');
               }}
               className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-all cursor-pointer"
-              title="Clear text"
+              title="Clear input text"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -434,7 +431,7 @@ export const VoiceInputController: React.FC<CompactVoiceToolbarProps> = ({
         <div className="px-3 py-2 rounded-lg bg-slate-900/90 border border-amber-500/40 text-amber-300 text-xs flex items-center gap-2 animate-fadeIn">
           <Volume2 className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-pulse" />
           <div className="truncate flex-1">
-            <span className="text-slate-400 font-medium">লাইভ শুনছি:</span> &quot;{interimTranscript}&quot;
+            <span className="text-slate-400 font-medium">Listening:</span> &quot;{interimTranscript}&quot;
           </div>
         </div>
       )}

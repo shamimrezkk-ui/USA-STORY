@@ -1,15 +1,15 @@
 import React, { useState } from 'react';
-import { 
-  X, 
-  Settings as SettingsIcon, 
-  Key, 
-  Cpu, 
-  Mic, 
-  Sliders, 
-  Check, 
-  Sparkles,
+import {
+  X,
+  Settings as SettingsIcon,
+  Key,
+  Cpu,
+  Mic,
+  Languages,
+  Check,
   ShieldCheck,
-  Languages
+  Sparkles,
+  Sliders,
 } from 'lucide-react';
 import { ApiKeyConfig } from './ApiKeyConfig.tsx';
 import { ModelSelector } from './ModelSelector.tsx';
@@ -40,23 +40,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto bg-slate-950/80 backdrop-blur-md transition-all animate-fadeIn"
-      role="dialog"
-      aria-modal="true"
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
-      {/* Click outside backdrop */}
-      <div className="fixed inset-0" onClick={onClose} />
-
-      {/* Modal Container */}
-      <div 
-        className="relative z-10 w-full max-w-4xl bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl shadow-rose-950/30 overflow-hidden flex flex-col max-h-[90vh]"
-        onClick={(e) => e.stopPropagation()}
+      <div
+        className="w-full max-w-4xl max-h-[90vh] bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-scaleUp"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings and Configuration"
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-800 bg-slate-950/70 flex items-center justify-between">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/80">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-gradient-to-br from-rose-500/20 via-amber-500/20 to-indigo-500/20 border border-rose-500/30 rounded-xl text-amber-400">
+            <div className="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-400">
               <SettingsIcon className="w-5 h-5 animate-spin-slow" />
             </div>
             <div>
@@ -65,11 +64,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   Settings & Configuration
                 </h2>
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-800 font-medium">
-                  সেটিংস ও এআই মডেল
+                  Studio Settings
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Manage Gemini API Key, AI Models, and Bangla Voice-to-Text preferences.
+                Manage Gemini API Key, AI Models, and Voice-to-Text preferences.
               </p>
             </div>
           </div>
@@ -96,7 +95,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             }`}
           >
             <Sliders className="w-3.5 h-3.5" />
-            <span>All Settings (সব সেটিংস)</span>
+            <span>All Settings</span>
           </button>
 
           <button
@@ -135,7 +134,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             }`}
           >
             <Mic className="w-3.5 h-3.5 text-rose-400" />
-            <span>Voice & Language (ভয়েস)</span>
+            <span>Voice & Language</span>
           </button>
         </div>
 
@@ -191,13 +190,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                      Voice-to-Text & Language Settings
+                      Voice-to-Text & Recognition Language
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800">
-                        সঠিক বাংলা ভয়েস ইনপুট
+                        Speech Engine
                       </span>
                     </h3>
                     <p className="text-xs text-slate-400">
-                      Configure accurate speech recognition for Bangla (বাংলাদেশ/ভারত), Banglish, and English.
+                      Configure accurate speech recognition for your preferred language dialect.
                     </p>
                   </div>
                 </div>
@@ -207,45 +206,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="mt-4 space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-2">
-                    Default Voice Recognition Language (ভয়েস রেকর্ডিং এর ভাষা):
+                    Default Voice Recognition Language:
                   </label>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => onVoiceLanguageChange('bn-BD')}
-                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                        voiceLanguage === 'bn-BD'
-                          ? 'bg-rose-950/40 border-rose-500/80 text-rose-200 shadow-md shadow-rose-950/30 ring-1 ring-rose-500'
-                          : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between font-bold text-xs">
-                        <span>বাংলা (বাংলাদেশ)</span>
-                        {voiceLanguage === 'bn-BD' && <Check className="w-4 h-4 text-rose-400" />}
-                      </div>
-                      <p className="text-[11px] text-slate-400 mt-1">
-                        bn-BD • সবচেয়ে নিখুঁত ও দ্রুত বাংলা শব্দ সংগ্রহ
-                      </p>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => onVoiceLanguageChange('bn-IN')}
-                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                        voiceLanguage === 'bn-IN'
-                          ? 'bg-rose-950/40 border-rose-500/80 text-rose-200 shadow-md shadow-rose-950/30 ring-1 ring-rose-500'
-                          : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between font-bold text-xs">
-                        <span>বাংলা (ভারত / পশ্চিমবঙ্গ)</span>
-                        {voiceLanguage === 'bn-IN' && <Check className="w-4 h-4 text-rose-400" />}
-                      </div>
-                      <p className="text-[11px] text-slate-400 mt-1">
-                        bn-IN • পশ্চিমবঙ্গীয় উচ্চারণ ও বাংলা শব্দ
-                      </p>
-                    </button>
-
                     <button
                       type="button"
                       onClick={() => onVoiceLanguageChange('en-US')}
@@ -263,24 +226,60 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         en-US • Standard American English diction
                       </p>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onVoiceLanguageChange('bn-BD')}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                        voiceLanguage === 'bn-BD'
+                          ? 'bg-rose-950/40 border-rose-500/80 text-rose-200 shadow-md shadow-rose-950/30 ring-1 ring-rose-500'
+                          : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between font-bold text-xs">
+                        <span>Bengali (Bangladesh)</span>
+                        {voiceLanguage === 'bn-BD' && <Check className="w-4 h-4 text-rose-400" />}
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        bn-BD • Bengali speech recognition
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onVoiceLanguageChange('bn-IN')}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                        voiceLanguage === 'bn-IN'
+                          ? 'bg-rose-950/40 border-rose-500/80 text-rose-200 shadow-md shadow-rose-950/30 ring-1 ring-rose-500'
+                          : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between font-bold text-xs">
+                        <span>Bengali (India)</span>
+                        {voiceLanguage === 'bn-IN' && <Check className="w-4 h-4 text-rose-400" />}
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        bn-IN • Regional Bengali speech recognition
+                      </p>
+                    </button>
                   </div>
                 </div>
 
-                {/* Bangla & Banglish Guide Box */}
+                {/* Narrative Features Guide */}
                 <div className="p-3.5 rounded-xl bg-indigo-950/30 border border-indigo-500/30 text-xs text-indigo-200 space-y-1.5">
                   <div className="flex items-center gap-1.5 font-bold text-indigo-300">
                     <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                    <span>বাংলা ও বাংলিশ বোঝাবুঝি নির্দেশিকা (How Bangla & Banglish are handled):</span>
+                    <span>Multi-Language & Audio Processing Guide:</span>
                   </div>
                   <ul className="list-disc pl-5 space-y-1 text-slate-300 text-[11px] leading-relaxed">
                     <li>
-                      <strong className="text-amber-300">বিশুদ্ধ বাংলা (Bengali Script):</strong> ভয়েস ইনপুট বা সরাসরি টেক্সটে বাংলা লিখলে এআই স্বয়ংক্রিয়ভাবে গল্পের চরিত্র, আবেগ ও ঘটনা বিশ্লেষণ করে আমেরিকান সিনেমাটিক চিত্রনাট্যে রূপান্তর করবে।
+                      <strong className="text-amber-300">Direct Speech Dictation:</strong> Click the microphone button to dictate your story. The speech engine transcribes spoken words directly into the text box.
                     </li>
                     <li>
-                      <strong className="text-amber-300">বাংলিশ (Romanized Bengali):</strong> যেমন: <em>&quot;Ekta chotto biral bacha rain er moddhe porch er niche kaapchilo...&quot;</em> — সিস্টেম সম্পূর্ণ বুঝে নিয়ে সঠিক প্রম্পট তৈরি করবে।
+                      <strong className="text-amber-300">Multi-Lingual Narrative Understanding:</strong> The AI understands stories written in English, Bengali, or Romanized text, and converts them into production-ready Hollywood cinematic video prompts.
                     </li>
                     <li>
-                      <strong className="text-amber-300">ভয়েস স্পিচ পলিশিং:</strong> কথা বলার পর যদি অসম্পূর্ণ বাক্য বা অপ্রয়োজনীয় বিরতি থাকে, &quot;Format Spoken Story&quot; বাটনে ক্লিক করলেই এআই গল্পটি সুন্দরভাবে সাজিয়ে দেবে।
+                      <strong className="text-amber-300">Speech Polishing:</strong> Click &quot;Polish&quot; anytime to clean up casual pauses, filler words, or fragmented spoken sentences.
                     </li>
                   </ul>
                 </div>
@@ -301,7 +300,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             onClick={onClose}
             className="px-5 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-400 hover:to-amber-400 text-slate-950 font-bold text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 cursor-pointer"
           >
-            Done (সম্পন্ন)
+            Done
           </button>
         </div>
       </div>

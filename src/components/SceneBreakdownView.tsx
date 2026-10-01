@@ -193,7 +193,7 @@ export const SceneBreakdownView: React.FC<SceneBreakdownViewProps> = ({
               </div>
               <div>
                 <h3 className="text-xs font-bold text-emerald-300 uppercase tracking-wider">
-                  Master Character Reference & Consistency Lock (ক্যারেক্টার ইমেজ ও রেফারেন্স প্রম্পট)
+                  Master Character Reference & Consistency Lock (Character Master Prompt)
                 </h3>
                 <p className="text-[11px] text-slate-400">
                   Generate this character image first in Midjourney / Flux / Imagen as your visual reference anchor.
@@ -248,7 +248,7 @@ export const SceneBreakdownView: React.FC<SceneBreakdownViewProps> = ({
                         {isCopied ? (
                           <>
                             <Check className="w-3.5 h-3.5 text-emerald-200" />
-                            <span>ইমেজ প্রম্পট কপি হয়েছে!</span>
+                            <span>Prompt Copied!</span>
                           </>
                         ) : (
                           <>
@@ -285,7 +285,7 @@ export const SceneBreakdownView: React.FC<SceneBreakdownViewProps> = ({
               </div>
               <div>
                 <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-wider">
-                  Video Metadata & Publishing Suite (আলাদা আলাদা বক্সে টাইটেল, ডেসক্রিপশন ও ট্যাগ)
+                  Video Metadata & Publishing Suite (Titles, Description & Tags)
                 </h3>
                 <p className="text-[11px] text-slate-400">
                   Ready-to-publish metadata for YouTube, TikTok, and Instagram Reels.
@@ -299,13 +299,13 @@ export const SceneBreakdownView: React.FC<SceneBreakdownViewProps> = ({
 
           {/* Grid of Distinct Boxes: Titles & Thumbnail */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Box 1: Video Titles (ভিডিও টাইটেল) */}
+            {/* Box 1: Video Titles */}
             <div className="p-4 rounded-xl bg-slate-950 border border-indigo-500/40 shadow-lg space-y-3">
               <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                 <div className="flex items-center gap-2">
                   <Type className="w-4 h-4 text-indigo-400" />
                   <span className="text-xs font-bold text-indigo-200 uppercase tracking-wide">
-                    📌 ভিডিও টাইটেল (Video Titles)
+                    📌 Video Titles
                   </span>
                 </div>
                 <span className="text-[10px] text-slate-400 font-mono">
@@ -340,7 +340,7 @@ export const SceneBreakdownView: React.FC<SceneBreakdownViewProps> = ({
                         {isCopied ? (
                           <>
                             <Check className="w-3.5 h-3.5 text-emerald-200" />
-                            <span className="text-[11px]">কপি হয়েছে!</span>
+                            <span className="text-[11px]">Copied!</span>
                           </>
                         ) : (
                           <>
@@ -355,14 +355,14 @@ export const SceneBreakdownView: React.FC<SceneBreakdownViewProps> = ({
               </div>
             </div>
 
-            {/* Box 2: Master 16:9 Thumbnail Prompt (থাম্বনেইল প্রম্পট) */}
+            {/* Box 2: Master 16:9 Thumbnail Prompt */}
             <div className="p-4 rounded-xl bg-slate-950 border border-rose-500/40 shadow-lg space-y-3 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between pb-2 border-b border-slate-800 mb-2">
                   <div className="flex items-center gap-2">
                     <ImageIcon className="w-4 h-4 text-rose-400" />
                     <span className="text-xs font-bold text-rose-200 uppercase tracking-wide">
-                      🎨 ইউটিউব থাম্বনেইল প্রম্পট (16:9 Thumbnail)
+                      🎨 YouTube 16:9 Thumbnail Prompt
                     </span>
                   </div>
                   <button
@@ -373,7 +373,7 @@ export const SceneBreakdownView: React.FC<SceneBreakdownViewProps> = ({
                     {copiedThumbnail ? (
                       <>
                         <Check className="w-3.5 h-3.5 text-rose-200" />
-                        <span className="text-[11px]">কপি হয়েছে!</span>
+                        <span className="text-[11px]">Copied!</span>
                       </>
                     ) : (
                       <>
@@ -395,14 +395,14 @@ export const SceneBreakdownView: React.FC<SceneBreakdownViewProps> = ({
 
           {/* Grid of Distinct Boxes: Description & Tags */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Box 3: Video Description (ভিডিও ডেসক্রিপশন) */}
+            {/* Box 3: Video Description */}
             <div className="p-4 rounded-xl bg-slate-950 border border-amber-500/40 shadow-lg space-y-3 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between pb-2 border-b border-slate-800 mb-2">
                   <div className="flex items-center gap-2">
                     <FileText className="w-4 h-4 text-amber-400" />
                     <span className="text-xs font-bold text-amber-200 uppercase tracking-wide">
-                      📝 ভিডিও ডেসক্রিপশন (SEO Description)
+                      📝 Video SEO Description
                     </span>
                   </div>
                   <button
@@ -413,7 +413,7 @@ export const SceneBreakdownView: React.FC<SceneBreakdownViewProps> = ({
                     {copiedDesc ? (
                       <>
                         <Check className="w-3.5 h-3.5 text-amber-200" />
-                        <span className="text-[11px]">কপি হয়েছে!</span>
+                        <span className="text-[11px]">Copied!</span>
                       </>
                     ) : (
                       <>
@@ -432,14 +432,14 @@ export const SceneBreakdownView: React.FC<SceneBreakdownViewProps> = ({
               </p>
             </div>
 
-            {/* Box 4: Tags & Hashtags (ট্যাগ ও হ্যাশট্যাগ) */}
+            {/* Box 4: Tags & Hashtags */}
             <div className="p-4 rounded-xl bg-slate-950 border border-teal-500/40 shadow-lg space-y-3 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between pb-2 border-b border-slate-800 mb-2">
                   <div className="flex items-center gap-2">
                     <Tag className="w-4 h-4 text-teal-400" />
                     <span className="text-xs font-bold text-teal-200 uppercase tracking-wide">
-                      🏷️ ট্যাগ ও হ্যাশট্যাগ (Tags & Hashtags)
+                      🏷️ Tags &amp; Hashtags
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">

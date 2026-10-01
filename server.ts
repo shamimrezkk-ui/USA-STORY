@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { apiRouter } from './server/apiRouter.ts';
@@ -26,9 +27,19 @@ async function startServer() {
 
   const distPath = path.join(__dirname, 'dist');
   const distHtmlPath = path.join(distPath, 'index.html');
-  const isProduction = process.env.NODE_ENV === 'production' || fs.existsSync(distHtmlPath);
+  const isProduction = process.env.NODE_ENV === 'production';
 
-  if (isProduction && fs.existsSync(distHtmlPath)) {
+  // In production, ensure dist/ exists
+  if (isProduction && !fs.existsSync(distHtmlPath)) {
+    console.log('[Server] Production build not found in dist/. Triggering vite build now...');
+    try {
+      execSync('npx vite build', { stdio: 'inherit' });
+    } catch (err) {
+      console.error('[Server] Failed to auto-build dist:', err);
+    }
+  }
+
+  if (fs.existsSync(distHtmlPath)) {
     console.log('[Server] Serving production static build from dist/');
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {

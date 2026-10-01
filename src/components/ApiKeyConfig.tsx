@@ -1,42 +1,40 @@
-import React, { useState, useEffect } from 'react';
-import { Key, CheckCircle2, XCircle, Eye, EyeOff, Save, Trash2, RefreshCw, ShieldAlert, Sparkles, Check, Server } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+  Key,
+  CheckCircle2,
+  XCircle,
+  RefreshCw,
+  Sparkles,
+  ShieldAlert,
+  Trash2,
+  Save,
+  Check,
+  Server,
+  Eye,
+  EyeOff,
+} from 'lucide-react';
 import { testGeminiApiKey } from '../services/apiClient.ts';
 
 interface ApiKeyConfigProps {
   apiKey: string;
   onApiKeyChange: (key: string) => void;
-  selectedModel: string;
+  selectedModel?: string;
 }
 
-export const ApiKeyConfig: React.FC<ApiKeyConfigProps> = ({ apiKey, onApiKeyChange, selectedModel }) => {
-  const [inputValue, setInputValue] = useState('');
-  const [showKey, setShowKey] = useState(false);
+export const ApiKeyConfig: React.FC<ApiKeyConfigProps> = ({
+  apiKey,
+  onApiKeyChange,
+  selectedModel = 'gemini-3.8-flash',
+}) => {
+  const [inputValue, setInputValue] = useState<string>(apiKey);
+  const [showKey, setShowKey] = useState<boolean>(false);
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'failed'>('idle');
-  const [statusMessage, setStatusMessage] = useState('');
-  const [canRevertToDefault, setCanRevertToDefault] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string>('');
+  const [canRevertToDefault, setCanRevertToDefault] = useState<boolean>(false);
 
-  const sanitizeKey = (val: string): string => {
-    let cleaned = val.trim();
-    if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
-      cleaned = cleaned.slice(1, -1).trim();
-    }
-    if (cleaned.startsWith('GEMINI_API_KEY=')) {
-      cleaned = cleaned.replace(/^GEMINI_API_KEY=/, '').trim();
-    }
-    if (cleaned.startsWith('export GEMINI_API_KEY=')) {
-      cleaned = cleaned.replace(/^export GEMINI_API_KEY=/, '').trim();
-    }
-    return cleaned.replace(/^["']|["']$/g, '').trim();
+  const sanitizeKey = (k: string) => {
+    return k.trim().replace(/['";\s]/g, '');
   };
-
-  useEffect(() => {
-    const saved = localStorage.getItem('gemini_api_key_custom');
-    if (saved) {
-      const sanitized = sanitizeKey(saved);
-      setInputValue(sanitized);
-      onApiKeyChange(sanitized);
-    }
-  }, []);
 
   const handleSave = () => {
     const sanitized = sanitizeKey(inputValue);
@@ -49,7 +47,7 @@ export const ApiKeyConfig: React.FC<ApiKeyConfigProps> = ({ apiKey, onApiKeyChan
     onApiKeyChange(sanitized);
     setTestStatus('idle');
     setCanRevertToDefault(false);
-    setStatusMessage('✓ কাস্টম API Key ব্রাউজারে সংরক্ষিত হয়েছে (Key saved).');
+    setStatusMessage('✓ Custom API Key saved successfully to browser storage.');
     setTimeout(() => {
       setStatusMessage('');
     }, 4000);
@@ -61,23 +59,23 @@ export const ApiKeyConfig: React.FC<ApiKeyConfigProps> = ({ apiKey, onApiKeyChan
     onApiKeyChange('');
     setTestStatus('success');
     setCanRevertToDefault(false);
-    setStatusMessage('✓ সিস্টেমের অন্তর্নির্মিত Gemini AI সক্রিয় করা হয়েছে (Using Built-in System AI - Ready).');
+    setStatusMessage('✓ Default built-in Gemini AI engine activated (Ready).');
   };
 
   const handleTest = async () => {
     setTestStatus('testing');
     setCanRevertToDefault(false);
     const sanitized = sanitizeKey(inputValue);
-    setStatusMessage(sanitized ? 'কাস্টম API Key কানেকশন যাচাই করা হচ্ছে...' : 'সিস্টেমের অন্তর্নির্মিত Gemini AI কানেকশন টেস্ট করা হচ্ছে...');
+    setStatusMessage(sanitized ? 'Testing custom API key connection...' : 'Testing built-in system Gemini AI connection...');
     try {
       const res = await testGeminiApiKey(sanitized || undefined, selectedModel);
       setTestStatus('success');
-      setStatusMessage(res.message || '✓ Gemini AI সফলভাবে সংযুক্ত হয়েছে!');
+      setStatusMessage(res.message || '✓ Gemini AI connection verified successfully!');
     } catch (err: any) {
       setTestStatus('failed');
       setCanRevertToDefault(true);
-      const msg = err.message || 'কানেকশন সমস্যা হয়েছে।';
-      setStatusMessage(`✕ কানেকশন ব্যর্থ: ${msg}`);
+      const msg = err.message || 'Connection test failed.';
+      setStatusMessage(`✕ Connection failed: ${msg}`);
     }
   };
 
@@ -100,14 +98,14 @@ export const ApiKeyConfig: React.FC<ApiKeyConfigProps> = ({ apiKey, onApiKeyChan
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-bold tracking-wider uppercase text-amber-400">
-                Gemini AI সংযোগ ও কনফিগারেশন
+                Gemini AI Connection & API Key
               </h2>
               <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-                Secure Proxy
+                Secure Server Proxy
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              অ্যাপটিতে স্বয়ংক্রিয়ভাবে শক্তিশালী অন্তর্নির্মিত Gemini AI যুক্ত আছে। আপনি চাইলে আপনার নিজস্ব কী-ও দিতে পারেন।
+              The application comes with built-in Gemini AI. You may also provide your own personal API key.
             </p>
           </div>
         </div>
@@ -116,7 +114,7 @@ export const ApiKeyConfig: React.FC<ApiKeyConfigProps> = ({ apiKey, onApiKeyChan
         <div className="flex items-center gap-2">
           {isUsingCustomKey ? (
             <div className="flex items-center gap-2 bg-amber-950/40 border border-amber-500/40 px-3 py-1.5 rounded-lg text-xs">
-              <span className="text-amber-400 font-medium">কাস্টম কী:</span>
+              <span className="text-amber-400 font-medium">Custom Key:</span>
               <code className="font-mono text-amber-300 tracking-wider font-semibold">
                 {getMaskedKey(apiKey)}
               </code>
@@ -125,7 +123,7 @@ export const ApiKeyConfig: React.FC<ApiKeyConfigProps> = ({ apiKey, onApiKeyChan
             <div className="flex items-center gap-2 bg-emerald-950/60 border border-emerald-500/50 px-3.5 py-1.5 rounded-lg text-xs">
               <Server className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <span className="text-emerald-300 font-semibold">
-                ✓ বিল্ট-ইন সার্ভার AI সক্রিয় (Built-in AI Ready)
+                ✓ Built-in Server AI Active (Ready)
               </span>
             </div>
           )}
@@ -137,7 +135,7 @@ export const ApiKeyConfig: React.FC<ApiKeyConfigProps> = ({ apiKey, onApiKeyChan
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-indigo-400 shrink-0" />
           <span>
-            <strong>টিপস:</strong> কোনো নিজস্ব API Key না থাকলেও আপনি সরাসরি গল্প তৈরি করতে পারবেন। সার্ভারের অন্তর্নির্মিত AI সবসময় প্রস্তুত!
+            <strong>Tip:</strong> You do not need your own API Key to generate stories. The system&apos;s built-in AI is pre-configured and active!
           </span>
         </div>
         {isUsingCustomKey && (
@@ -146,7 +144,7 @@ export const ApiKeyConfig: React.FC<ApiKeyConfigProps> = ({ apiKey, onApiKeyChan
             onClick={handleUseDefault}
             className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md text-xs font-semibold shrink-0 cursor-pointer transition-all shadow"
           >
-            ডিফল্ট AI ব্যবহার করুন
+            Switch to Built-in AI
           </button>
         )}
       </div>
@@ -156,7 +154,7 @@ export const ApiKeyConfig: React.FC<ApiKeyConfigProps> = ({ apiKey, onApiKeyChan
         <div className="relative flex-1">
           <input
             type={showKey ? 'text' : 'password'}
-            placeholder="আপনার নিজস্ব Gemini API Key থাকলে এখানে দিন (ঐচ্ছিক / Optional)"
+            placeholder="Enter your personal Gemini API Key (Optional)..."
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             className="w-full bg-slate-950 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 rounded-lg px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none font-mono transition-colors"
@@ -180,7 +178,7 @@ export const ApiKeyConfig: React.FC<ApiKeyConfigProps> = ({ apiKey, onApiKeyChan
             className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs tracking-wider uppercase rounded-lg transition-all shadow-md active:scale-95 cursor-pointer"
           >
             <Save className="w-4 h-4" />
-            <span>কী সেভ করুন</span>
+            <span>Save Key</span>
           </button>
 
           <button
@@ -190,7 +188,7 @@ export const ApiKeyConfig: React.FC<ApiKeyConfigProps> = ({ apiKey, onApiKeyChan
             className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs tracking-wider uppercase rounded-lg transition-all border border-slate-700 active:scale-95 cursor-pointer disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${testStatus === 'testing' ? 'animate-spin text-amber-400' : ''}`} />
-            <span>{testStatus === 'testing' ? 'যাচাই হচ্ছে...' : 'কানেকশন টেস্ট'}</span>
+            <span>{testStatus === 'testing' ? 'Testing...' : 'Test Connection'}</span>
           </button>
 
           <button
@@ -200,7 +198,7 @@ export const ApiKeyConfig: React.FC<ApiKeyConfigProps> = ({ apiKey, onApiKeyChan
             title="Use Built-in System AI"
           >
             <Check className="w-4 h-4" />
-            <span>বিল্ট-ইন AI ব্যবহার করুন</span>
+            <span>Use Built-in AI</span>
           </button>
 
           {isUsingCustomKey && (
@@ -211,7 +209,7 @@ export const ApiKeyConfig: React.FC<ApiKeyConfigProps> = ({ apiKey, onApiKeyChan
               title="Clear custom key"
             >
               <Trash2 className="w-4 h-4" />
-              <span>কী মুছুন</span>
+              <span>Remove Key</span>
             </button>
           )}
         </div>
@@ -242,7 +240,7 @@ export const ApiKeyConfig: React.FC<ApiKeyConfigProps> = ({ apiKey, onApiKeyChan
               onClick={handleUseDefault}
               className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md text-xs font-bold shrink-0 cursor-pointer transition-all shadow"
             >
-              বিল্ট-ইন AI নির্বাচন করুন
+              Select Built-in AI
             </button>
           )}
         </div>
@@ -252,7 +250,7 @@ export const ApiKeyConfig: React.FC<ApiKeyConfigProps> = ({ apiKey, onApiKeyChan
       <div className="mt-3 flex items-center gap-2 text-[11px] text-slate-500">
         <ShieldAlert className="w-3.5 h-3.5 text-slate-400 shrink-0" />
         <span>
-          নিরাপত্তা নীতি: API Key ব্যাকএন্ড প্রক্সির মাধ্যমে সুরক্ষিত থাকে এবং প্রম্পট, স্টোরি টেক্সট বা এক্সপোর্টে প্রকাশ পায় না।
+          Security Policy: API keys are securely proxied server-side and never exposed in client bundles or exports.
         </span>
       </div>
     </section>

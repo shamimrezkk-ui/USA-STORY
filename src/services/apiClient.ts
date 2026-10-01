@@ -18,6 +18,23 @@ function getHeaders(customApiKey?: string): HeadersInit {
   return headers;
 }
 
+async function safeParseResponse(res: Response, fallbackErrMsg: string): Promise<any> {
+  let text = '';
+  try {
+    text = await res.text();
+    const data = JSON.parse(text);
+    if (!res.ok || (data && data.success === false)) {
+      throw new Error(data?.error || fallbackErrMsg);
+    }
+    return data;
+  } catch (err: any) {
+    if (text && !text.startsWith('{')) {
+      throw new Error(`Invalid response received from server (HTTP ${res.status}). Please try again.`);
+    }
+    throw err;
+  }
+}
+
 export async function testGeminiApiKey(apiKey?: string, model = 'gemini-3.8-flash'): Promise<{ success: boolean; message: string }> {
   const res = await fetch('/api/gemini/test', {
     method: 'POST',
@@ -25,10 +42,7 @@ export async function testGeminiApiKey(apiKey?: string, model = 'gemini-3.8-flas
     body: JSON.stringify({ model }),
   });
 
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || 'Failed to connect to Gemini API.');
-  }
+  const data = await safeParseResponse(res, 'Failed to connect to Gemini API.');
   return { success: true, message: data.message || 'Gemini API Connected' };
 }
 
@@ -38,10 +52,7 @@ export async function fetchAvailableModels(apiKey?: string) {
     headers: getHeaders(apiKey),
     body: JSON.stringify({}),
   });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || 'Failed to fetch models.');
-  }
+  const data = await safeParseResponse(res, 'Failed to fetch models.');
   return data.models as Array<{ id: string; name: string; description: string; isDefault: boolean }>;
 }
 
@@ -55,10 +66,7 @@ export async function apiAnalyzeStory(
     headers: getHeaders(apiKey),
     body: JSON.stringify({ rawStory, model }),
   });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || 'Failed to analyze story.');
-  }
+  const data = await safeParseResponse(res, 'Failed to analyze story.');
   return data.analysis as StoryAnalysis;
 }
 
@@ -73,10 +81,7 @@ export async function apiImproveStory(
     headers: getHeaders(apiKey),
     body: JSON.stringify({ rawStory, analysis, model }),
   });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || 'Failed to generate improved story.');
-  }
+  const data = await safeParseResponse(res, 'Failed to generate improved story.');
   return data.improvedStory as ImprovedStory;
 }
 
@@ -91,10 +96,7 @@ export async function apiGenerateCharacters(
     headers: getHeaders(apiKey),
     body: JSON.stringify({ improvedStoryText, analysis, model }),
   });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || 'Failed to generate character bible.');
-  }
+  const data = await safeParseResponse(res, 'Failed to generate character bible.');
   return data.characters as CharacterBibleEntry[];
 }
 
@@ -112,10 +114,7 @@ export async function apiGenerateScenes(
     headers: getHeaders(apiKey),
     body: JSON.stringify({ improvedStory, characters, duration, sceneCount, targetVideoLength, model }),
   });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || 'Failed to generate scene breakdown.');
-  }
+  const data = await safeParseResponse(res, 'Failed to generate scene breakdown.');
   return data.scenes as SceneItem[];
 }
 
@@ -132,10 +131,7 @@ export async function apiGeneratePackage(
     headers: getHeaders(apiKey),
     body: JSON.stringify({ improvedStory, scenes, characters, model, platform }),
   });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || 'Failed to generate final release package.');
-  }
+  const data = await safeParseResponse(res, 'Failed to generate final release package.');
   return data.videoPackage as VideoPackage;
 }
 
@@ -159,10 +155,7 @@ export async function apiFastGenerate(
     headers: getHeaders(apiKey),
     body: JSON.stringify({ rawStory, duration, sceneCount, targetVideoLength, model, platform }),
   });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || 'Failed to generate character and video prompts.');
-  }
+  const data = await safeParseResponse(res, 'Failed to generate character and video prompts.');
   return {
     analysis: data.analysis,
     improvedStory: data.improvedStory,
@@ -190,12 +183,9 @@ export async function apiRunFullPipeline(
   const res = await fetch('/api/gemini/full-pipeline', {
     method: 'POST',
     headers: getHeaders(apiKey),
-    body: JSON.stringify({ rawStory, duration, sceneCount, targetVideoLength, model }),
+    body: JSON.stringify({ rawStory, duration, sceneCount, targetVideoLength, model, platform }),
   });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || 'Failed to execute story pipeline.');
-  }
+  const data = await safeParseResponse(res, 'Failed to execute story pipeline.');
   return {
     analysis: data.analysis,
     improvedStory: data.improvedStory,
@@ -220,10 +210,7 @@ export async function apiFormatVoiceTranscript(
     headers: getHeaders(apiKey),
     body: JSON.stringify({ transcript, languagePreference, model }),
   });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || 'Failed to format voice transcript.');
-  }
+  const data = await safeParseResponse(res, 'Failed to format voice transcript.');
   return {
     formattedText: data.formattedText,
     detectedLanguage: data.detectedLanguage,

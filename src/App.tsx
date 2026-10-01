@@ -8,7 +8,7 @@ import {
   Clapperboard,
   RotateCcw,
   Settings as SettingsIcon,
-  Tv
+  Tv,
 } from 'lucide-react';
 import { SettingsModal } from './components/SettingsModal.tsx';
 import { StreamlinedStoryApp } from './components/StreamlinedStoryApp.tsx';
@@ -33,12 +33,12 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState<string>('gemini-3.8-flash');
   const [rawStory, setRawStory] = useState<string>(SAMPLE_STORIES[0].content);
   const [duration, setDuration] = useState<VideoDuration>('10s');
-  const [targetVideoLength, setTargetVideoLength] = useState<TargetVideoLength>('1m');
+  const [targetVideoLength, setTargetVideoLength] = useState<TargetVideoLength>('auto');
   const [platform, setPlatform] = useState<TargetPlatform>('youtube');
   const [customSceneCount, setCustomSceneCount] = useState<number>(6);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
-  // Voice Language state (Defaults to bn-BD for accurate Bangla voice input)
+  // Voice Language state (Defaults to bn-BD for accurate Bengali voice input)
   const [voiceLanguage, setVoiceLanguage] = useState<string>(() => {
     return localStorage.getItem('story_voice_language') || 'bn-BD';
   });
@@ -73,6 +73,14 @@ export default function App() {
       return Math.max(1, Math.min(customSceneCount || 6, 80));
     }
     const clipSec = duration === '10s' ? 10 : 8;
+    if (targetVideoLength === 'auto') {
+      const words = rawStory.trim().split(/\s+/).filter(Boolean).length;
+      if (words <= 40) return 3; // Short story -> exactly 3 video prompts!
+      if (words <= 80) return 4;
+      if (words <= 140) return 5;
+      if (words <= 220) return 6;
+      return 8;
+    }
     switch (targetVideoLength) {
       case '30s': return Math.round(30 / clipSec); // 3 for 10s, 4 for 8s
       case '1m': return Math.round(60 / clipSec); // 6 for 10s, 8 for 8s
@@ -89,13 +97,13 @@ export default function App() {
     if (!rawStory.trim()) return;
     setIsProcessing(true);
     setErrorMessage(null);
-    setStepMessage('গল্পের গঠন, ক্যারেক্টার ও আমেরিকান সিনেমাটিক উপাদান বিশ্লেষণ করা হচ্ছে...');
+    setStepMessage('Analyzing story structure, character arcs, and cinematic USA elements...');
     try {
       const result = await apiAnalyzeStory(rawStory, selectedModel, apiKey);
       setAnalysis(result);
     } catch (err: any) {
       console.error(err);
-      setErrorMessage(err.message || 'গল্প অ্যানালাইজ করতে সমস্যা হয়েছে। দয়া করে সেটিংস থেকে Gemini API Key চেক করুন।');
+      setErrorMessage(err.message || 'Story analysis failed. Please check your Gemini API key in Settings.');
     } finally {
       setIsProcessing(false);
       setStepMessage('');
@@ -108,8 +116,8 @@ export default function App() {
     setIsProcessing(true);
     setErrorMessage(null);
     const sceneCount = getComputedSceneCount();
-    const platformLabel = platform === 'facebook' ? 'Facebook (Watch/Viral)' : 'YouTube (16:9)';
-    setStepMessage(`ক্যারেক্টার ইমেজ প্রম্পট এবং ${targetVideoLength} (${sceneCount}টি ভিডিও প্রম্পট) [${platformLabel}] তৈরি হচ্ছে...`);
+    const platformLabel = platform === 'facebook' ? 'Facebook (Watch/Viral)' : 'YouTube (16:9 Cinema)';
+    setStepMessage(`Generating master image prompt and ${targetVideoLength} (${sceneCount} video prompts) [${platformLabel}]...`);
 
     try {
       const res = await apiFastGenerate(rawStory, duration, sceneCount, targetVideoLength, selectedModel, apiKey, platform);
@@ -120,25 +128,27 @@ export default function App() {
       setVideoPackage(res.videoPackage);
     } catch (err: any) {
       console.error(err);
-      setErrorMessage(err.message || 'প্রম্পট জেনারেশন ব্যর্থ হয়েছে। দয়া করে সেটিংস থেকে আপনার Gemini API Key চেক করুন।');
+      setErrorMessage(err.message || 'Prompt generation failed. Please check your Gemini API settings or try again.');
     } finally {
       setIsProcessing(false);
       setStepMessage('');
     }
   };
 
+  // Complete reset to clean page: clears raw story, all outputs, errors, and messages
   const handleResetAll = () => {
-    if (confirm('নতুন গল্প শুরু করতে চান? বর্তমান ফলাফল ক্লিয়ার করা হবে।')) {
-      setAnalysis(null);
-      setImprovedStory(null);
-      setCharacters([]);
-      setScenes([]);
-      setVideoPackage(null);
-      setErrorMessage(null);
-    }
+    setRawStory('');
+    setAnalysis(null);
+    setImprovedStory(null);
+    setCharacters([]);
+    setScenes([]);
+    setVideoPackage(null);
+    setErrorMessage(null);
+    setStepMessage('');
   };
 
   const hasOutput = characters.length > 0 || scenes.length > 0 || !!videoPackage;
+  const hasStory = rawStory.trim().length > 0;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-rose-500 selection:text-white font-sans antialiased">
@@ -164,7 +174,7 @@ export default function App() {
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 font-medium">
-                ক্যারেক্টার ইমেজ প্রম্পট • ধারাবাহিক ভিডিও প্রম্পট • ইউটিউব টাইটেল ও ট্যাগ
+                Master Storyboard Image Prompt • Sequential Video Prompts • Release Suite
               </p>
             </div>
           </div>
@@ -172,7 +182,7 @@ export default function App() {
           <div className="flex items-center gap-2.5">
             <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs">
               <Tv className="w-3.5 h-3.5 text-amber-400" />
-              <span className="text-slate-400">আমেরিকান অডিয়েন্স ({duration})</span>
+              <span className="text-slate-400">USA Audience ({duration})</span>
             </div>
 
             {/* Dedicated Settings Button */}
@@ -183,7 +193,7 @@ export default function App() {
               title="Open Gemini API & Model Settings"
             >
               <SettingsIcon className="w-4 h-4 text-amber-400" />
-              <span className="text-xs font-bold tracking-wider uppercase">সেটিংস</span>
+              <span className="text-xs font-bold tracking-wider uppercase">Settings</span>
               <span
                 className={`w-2 h-2 rounded-full ${
                   apiKey ? 'bg-emerald-400 ring-2 ring-emerald-400/30' : 'bg-amber-400'
@@ -192,15 +202,16 @@ export default function App() {
               />
             </button>
 
-            {hasOutput && (
+            {/* Prominent Clear / Reset Button in Header */}
+            {(hasOutput || hasStory) && (
               <button
                 type="button"
                 onClick={handleResetAll}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 text-xs border border-slate-800 transition-all cursor-pointer"
-                title="Start a new project"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-950/50 hover:bg-rose-900/60 text-rose-300 hover:text-rose-100 text-xs border border-rose-800/80 transition-all cursor-pointer shadow-sm active:scale-95"
+                title="Clear all text and generated prompts to start fresh"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">নতুন গল্প</span>
+                <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
+                <span className="hidden sm:inline font-semibold">Clear All</span>
               </button>
             )}
           </div>
@@ -257,10 +268,10 @@ export default function App() {
       <footer className="relative z-10 border-t border-slate-900 bg-slate-950/80 px-4 py-6 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
           <p>
-            USA Story Cinematic AI • ক্যারেক্টার ও ভিডিও প্রম্পট স্টুডিও
+            USA Story Cinematic AI • Prompt Studio &amp; Continuous Video Suite
           </p>
           <p className="text-[11px] text-slate-600 font-mono">
-            Powered by Google Gemini 3.8 Flash & Pro • Locked Continuity Architecture
+            Powered by Google Gemini 3.8 Flash &amp; Pro • Locked Continuity Architecture
           </p>
         </div>
       </footer>

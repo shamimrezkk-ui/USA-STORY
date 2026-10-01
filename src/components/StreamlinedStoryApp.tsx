@@ -2,21 +2,23 @@ import React, { useState } from 'react';
 import {
   Clapperboard,
   Sparkles,
-  Clock,
+  BookOpen,
   Film,
-  Zap,
   Copy,
   Check,
   RotateCcw,
-  Settings as SettingsIcon,
-  Tag,
-  FileText,
+  Zap,
   Image as ImageIcon,
-  AlertCircle,
-  BookOpen,
+  Clock,
+  Tag,
   Hash,
-  RefreshCw
+  FileText,
+  AlertCircle,
+  Settings as SettingsIcon,
+  RefreshCw,
+  Trash2,
 } from 'lucide-react';
+import { VoiceInputController } from './VoiceInputController.tsx';
 import type {
   StoryAnalysis,
   ImprovedStory,
@@ -27,18 +29,17 @@ import type {
   TargetVideoLength,
   TargetPlatform,
 } from '../types/index.ts';
-import { VoiceInputController } from './VoiceInputController.tsx';
 
 interface StreamlinedStoryAppProps {
   rawStory: string;
-  onRawStoryChange: (story: string) => void;
+  onRawStoryChange: (text: string) => void;
   duration: VideoDuration;
   onDurationChange: (duration: VideoDuration) => void;
   targetVideoLength: TargetVideoLength;
   onTargetVideoLengthChange: (length: TargetVideoLength) => void;
   platform?: TargetPlatform;
   onPlatformChange?: (platform: TargetPlatform) => void;
-  customSceneCount: number;
+  customSceneCount?: number;
   onCustomSceneCountChange: (count: number) => void;
   isProcessing: boolean;
   stepMessage: string;
@@ -69,19 +70,17 @@ export const StreamlinedStoryApp: React.FC<StreamlinedStoryAppProps> = ({
   onTargetVideoLengthChange,
   platform = 'youtube',
   onPlatformChange,
-  customSceneCount,
+  customSceneCount = 6,
   onCustomSceneCountChange,
   isProcessing,
   stepMessage,
   errorMessage,
   onClearError,
-  analysis: _analysis,
   improvedStory,
   characters,
   scenes,
   videoPackage,
   onGenerateAll,
-  onAnalyzeOnly: _onAnalyzeOnly,
   voiceLanguage,
   onVoiceLanguageChange,
   selectedModel,
@@ -92,7 +91,6 @@ export const StreamlinedStoryApp: React.FC<StreamlinedStoryAppProps> = ({
 }) => {
   // Copy state trackers
   const [copiedStory, setCopiedStory] = useState<boolean>(false);
-  const [copiedCharId, setCopiedCharId] = useState<string | null>(null);
   const [copiedGridPrompt, setCopiedGridPrompt] = useState<boolean>(false);
   const [copiedSceneNumber, setCopiedSceneNumber] = useState<number | null>(null);
   const [copiedAllScenes, setCopiedAllScenes] = useState<boolean>(false);
@@ -101,6 +99,7 @@ export const StreamlinedStoryApp: React.FC<StreamlinedStoryAppProps> = ({
   const [copiedTags, setCopiedTags] = useState<boolean>(false);
   const [copiedHashtags, setCopiedHashtags] = useState<boolean>(false);
   const [copiedThumbnail, setCopiedThumbnail] = useState<boolean>(false);
+  const [storyLanguageTab, setStoryLanguageTab] = useState<'bengali' | 'english'>('bengali');
 
   // Helper calculation for scene count
   const getCalculatedSceneCount = () => {
@@ -108,6 +107,14 @@ export const StreamlinedStoryApp: React.FC<StreamlinedStoryAppProps> = ({
       return Math.max(1, Math.min(customSceneCount || 6, 80));
     }
     const clipSec = duration === '10s' ? 10 : 8;
+    if (targetVideoLength === 'auto') {
+      const words = rawStory.trim().split(/\s+/).filter(Boolean).length;
+      if (words <= 40) return 3; // Short story -> exactly 3 video prompts!
+      if (words <= 80) return 4;
+      if (words <= 140) return 5;
+      if (words <= 220) return 6;
+      return 8;
+    }
     switch (targetVideoLength) {
       case '30s': return Math.round(30 / clipSec); // 3 for 10s, 4 for 8s
       case '1m': return Math.round(60 / clipSec); // 6 for 10s, 8 for 8s
@@ -123,14 +130,15 @@ export const StreamlinedStoryApp: React.FC<StreamlinedStoryAppProps> = ({
 
   const getTargetLengthLabel = () => {
     switch (targetVideoLength) {
-      case '30s': return '৩০ সেকেন্ড (30s)';
-      case '1m': return '১ মিনিট (1m)';
-      case '2m': return '২ মিনিট (2m)';
-      case '3m': return '৩ মিনিট (3m)';
-      case '5m': return '৫ মিনিট (5m)';
-      case '10m': return '১০ মিনিট (10m)';
-      case 'custom': return `কাস্টম (${customSceneCount} সিন)`;
-      default: return '১ মিনিট';
+      case 'auto': return `Auto (${calculatedSceneCount} Prompts)`;
+      case '30s': return '30 Seconds (3 Prompts)';
+      case '1m': return '1 Minute (6 Prompts)';
+      case '2m': return '2 Minutes (12 Prompts)';
+      case '3m': return '3 Minutes (18 Prompts)';
+      case '5m': return '5 Minutes (30 Prompts)';
+      case '10m': return '10 Minutes (60 Prompts)';
+      case 'custom': return `Custom (${customSceneCount} Prompts)`;
+      default: return 'Auto';
     }
   };
 
@@ -144,13 +152,6 @@ export const StreamlinedStoryApp: React.FC<StreamlinedStoryAppProps> = ({
     handleCopyText(storyText, () => {
       setCopiedStory(true);
       setTimeout(() => setCopiedStory(false), 2500);
-    });
-  };
-
-  const handleCopyChar = (id: string, text: string) => {
-    handleCopyText(text, () => {
-      setCopiedCharId(id);
-      setTimeout(() => setCopiedCharId(null), 2500);
     });
   };
 
@@ -226,9 +227,14 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
   };
 
   const hasGeneratedOutputs = characters.length > 0 || scenes.length > 0 || !!videoPackage;
+  const hasInput = rawStory.trim().length > 0;
 
-  // The story to display in Bengali
-  const displayBengaliStory = improvedStory?.bengaliStory || improvedStory?.fullStory;
+  // The story narrative to display (Prioritizes Bengali story as requested: "are vai golpo to banglay thakbe")
+  const displayBengaliStory = (improvedStory?.bengaliStory && improvedStory.bengaliStory.trim()) || '';
+  const displayEnglishStory = (improvedStory?.fullStory && improvedStory.fullStory.trim()) || '';
+  const activeStoryText = storyLanguageTab === 'bengali'
+    ? (displayBengaliStory || displayEnglishStory)
+    : (displayEnglishStory || displayBengaliStory);
 
   return (
     <div className="space-y-6">
@@ -238,7 +244,7 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
           <div className="flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="font-bold text-rose-300">বিজ্ঞপ্তি / ত্রুটি (Notification)</p>
+              <p className="font-bold text-rose-300">Notification / Notice</p>
               <p className="mt-0.5 leading-relaxed">{errorMessage}</p>
             </div>
           </div>
@@ -255,7 +261,7 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
               title="Reset any custom key and retry using system built-in AI"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span>বিল্ট-ইন AI দিয়ে রিট্রাই</span>
+              <span>Retry with Built-in AI</span>
             </button>
             <button
               type="button"
@@ -269,7 +275,7 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
       )}
 
       {/* ========================================================
-          ১. STORY BOX (গল্প লেখার বক্স)
+          1. STORY INPUT BOX
           ======================================================== */}
       <section className="bg-slate-900/95 border border-slate-800 rounded-2xl p-5 shadow-2xl backdrop-blur-md">
         {/* Header */}
@@ -281,20 +287,33 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-bold tracking-wider uppercase text-rose-200">
-                  ১. গল্প লেখার বক্স (Story Input Box)
+                  1. Story Input & Narrative Setup
                 </h2>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-medium">
-                  বাংলা • Banglish • English
+                  Live-Action USA Narrative
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                আপনার গল্পটি এখানে লিখুন বা বলুন। এআই স্বয়ংক্রিয়ভাবে গল্পটি সুন্দর বাংলায় সাজাবে এবং প্রতিটি ভিডিও প্রম্পট তৈরি করবে।
+                Type or speak your story below. AI crafts the narrative and creates locked character image &amp; video prompts.
               </p>
             </div>
           </div>
 
           {/* Right Controls */}
           <div className="flex items-center gap-2 shrink-0">
+            {/* Quick Clear Story Button inside Header */}
+            {(hasInput || hasGeneratedOutputs) && (
+              <button
+                type="button"
+                onClick={onResetAll}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 hover:text-rose-200 text-xs font-semibold transition-all cursor-pointer shadow-sm active:scale-95"
+                title="Clear story and start fresh"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Clear All</span>
+              </button>
+            )}
+
             <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-950/70 border border-emerald-800/80 text-emerald-300 text-xs font-bold">
               <span>🇺🇸</span>
               <span>USA Audience Base</span>
@@ -307,25 +326,25 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
               title="Open Gemini API & Model Settings"
             >
               <SettingsIcon className="w-3.5 h-3.5 text-amber-400" />
-              <span className="font-semibold text-xs">সেটিংস</span>
+              <span className="font-semibold text-xs">Settings</span>
             </button>
           </div>
         </div>
 
-        {/* Clean Dropdown Controls Bar (Compact, Space-Saving UI) */}
+        {/* Clean Dropdown Controls Bar */}
         <div className="mt-3 p-2.5 rounded-xl bg-slate-950/90 border border-slate-800 flex flex-wrap items-center justify-between gap-2.5 shadow-inner">
           <div className="flex flex-wrap items-center gap-2.5">
             {/* 1. Platform Selector Dropdown */}
             <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 focus-within:border-indigo-500 transition-colors shadow-sm">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">প্ল্যাটফর্ম:</span>
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Platform:</span>
               <select
                 value={platform}
                 onChange={(e) => onPlatformChange?.(e.target.value as TargetPlatform)}
                 className="bg-transparent text-xs font-bold text-slate-100 cursor-pointer focus:outline-none pr-1"
-                aria-label="Select Target Platform (YouTube or Facebook)"
+                aria-label="Select Target Platform"
               >
                 <option value="youtube" className="bg-slate-900 text-slate-100">
-                  🔴 YouTube (16:9 • SEO • Chapters)
+                  🔴 YouTube (16:9 • Cinema SEO • Chapters)
                 </option>
                 <option value="facebook" className="bg-slate-900 text-slate-100">
                   🔵 Facebook (Watch • Reels • Viral Copy)
@@ -336,27 +355,44 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
             {/* 2. Video Length Dropdown */}
             <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 focus-within:border-amber-500 transition-colors shadow-sm">
               <Film className="w-3.5 h-3.5 text-amber-400" />
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">ভিডিও দৈর্ঘ্য:</span>
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Length:</span>
               <select
                 value={targetVideoLength}
                 onChange={(e) => onTargetVideoLengthChange(e.target.value as TargetVideoLength)}
                 className="bg-transparent text-xs font-bold text-slate-100 cursor-pointer focus:outline-none pr-1"
                 aria-label="Select Target Video Length"
               >
-                <option value="30s" className="bg-slate-900 text-slate-100">30s Short ({duration === '10s' ? 3 : 4} Prompts)</option>
-                <option value="1m" className="bg-slate-900 text-slate-100">1 Min ({duration === '10s' ? 6 : 8} Prompts)</option>
-                <option value="2m" className="bg-slate-900 text-slate-100">2 Min ({duration === '10s' ? 12 : 15} Prompts)</option>
-                <option value="3m" className="bg-slate-900 text-slate-100">3 Min ({duration === '10s' ? 18 : 23} Prompts)</option>
-                <option value="5m" className="bg-slate-900 text-slate-100">5 Min ({duration === '10s' ? 30 : 38} Prompts)</option>
-                <option value="10m" className="bg-slate-900 text-slate-100">10 Min ({duration === '10s' ? 60 : 75} Prompts)</option>
-                <option value="custom" className="bg-slate-900 text-slate-100">Custom Count (কাস্টম)</option>
+                <option value="auto" className="bg-slate-900 text-slate-100">
+                  ⚡ Auto (গল্পের সাইজ অনুযায়ী ৩+ প্রম্পট / Auto Adaptive)
+                </option>
+                <option value="30s" className="bg-slate-900 text-slate-100">
+                  30s Short (৩টি ভিডিও প্রম্পট / 3 Prompts)
+                </option>
+                <option value="1m" className="bg-slate-900 text-slate-100">
+                  1 Min (৬টি ভিডিও প্রম্পট / 6 Prompts)
+                </option>
+                <option value="2m" className="bg-slate-900 text-slate-100">
+                  2 Min (১২টি ভিডিও প্রম্পট / 12 Prompts)
+                </option>
+                <option value="3m" className="bg-slate-900 text-slate-100">
+                  3 Min (১৮টি ভিডিও প্রম্পট / 18 Prompts)
+                </option>
+                <option value="5m" className="bg-slate-900 text-slate-100">
+                  5 Min (৩০টি ভিডিও প্রম্পট / 30 Prompts)
+                </option>
+                <option value="10m" className="bg-slate-900 text-slate-100">
+                  10 Min (৬০টি ভিডিও প্রম্পট / 60 Prompts)
+                </option>
+                <option value="custom" className="bg-slate-900 text-slate-100">
+                  Custom Count (পছন্দমতো সংখ্যা, যেমন ৩)
+                </option>
               </select>
             </div>
 
             {/* Custom scene count input if 'custom' is selected */}
             {targetVideoLength === 'custom' && (
               <div className="flex items-center gap-1.5 bg-slate-900 border border-amber-500/50 rounded-xl px-2 py-1 shadow-sm">
-                <span className="text-xs text-amber-300 font-semibold">সংখ্যা:</span>
+                <span className="text-xs text-amber-300 font-semibold">Count:</span>
                 <input
                   type="number"
                   min={1}
@@ -372,7 +408,7 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
             {/* 3. Per-Clip Duration Dropdown */}
             <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 focus-within:border-teal-500 transition-colors shadow-sm">
               <Clock className="w-3.5 h-3.5 text-teal-400" />
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">ক্লিপ:</span>
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Clip:</span>
               <select
                 value={duration}
                 onChange={(e) => onDurationChange(e.target.value as VideoDuration)}
@@ -388,10 +424,10 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
           {/* Right calculation badge */}
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-indigo-500/40 text-xs">
-              <span className="text-slate-400">মোট:</span>
+              <span className="text-slate-400">Total:</span>
               <span className="text-amber-300 font-bold">{getTargetLengthLabel()}</span>
               <span className="text-slate-600">•</span>
-              <span className="text-emerald-300 font-mono font-bold">{calculatedSceneCount}টি ভিডিও প্রম্পট</span>
+              <span className="text-emerald-300 font-mono font-bold">{calculatedSceneCount} Video Prompts</span>
             </div>
           </div>
         </div>
@@ -413,115 +449,52 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
         <div className="mt-3 relative">
           <textarea
             rows={5}
-            placeholder="এখানে বাংলা, বাংলিশ বা ইংরেজিতে আপনার গল্প লিখুন, অথবা উপরের 'ভয়েস ইনপুট' বাটনে ক্লিক করে সরাসরি কথা বলুন... (e.g. ব্রুকলিনের বৃষ্টিভেজা সন্ধ্যায় একটি ছোট্ট কমলা বিড়ালছানা... অথবা Ekta chotto biral bacha...)"
+            placeholder="এখানে বাংলা, বাংলিশ বা ইংরেজিতে আপনার গল্প লিখুন, অথবা উপরের 'ভয়েস ইনপুট' বা Sample Stories ব্যবহার করুন... (Write or dictate your story in Bengali, Banglish, or English...)"
             value={rawStory}
             onChange={(e) => onRawStoryChange(e.target.value)}
             disabled={isProcessing}
             className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-100 placeholder-slate-500 focus:border-rose-500/80 focus:ring-1 focus:ring-rose-500/80 focus:outline-none resize-y leading-relaxed font-sans shadow-inner disabled:opacity-50"
           />
           <div className="absolute right-3 bottom-3 text-[10px] text-slate-500 font-mono bg-slate-950/90 px-2 py-0.5 rounded border border-slate-800 pointer-events-none">
-            {rawStory.length} ch • {rawStory.split(/\s+/).filter(Boolean).length} words
+            {rawStory.length} characters • {rawStory.split(/\s+/).filter(Boolean).length} words
           </div>
         </div>
       </section>
 
       {/* ========================================================
-          ২. বাংলায় সুন্দর করে সাজানো গল্প (Bengali Story Box)
-          "GOLPO TAY SUNDOR KORE BANGLAY SAJYE LIKHBE ER KICU NA"
-          Clean narrative display with Copy Story button - NO technical cards!
-          ======================================================== */}
-      <section className="bg-slate-900/95 border border-indigo-500/30 rounded-2xl p-5 shadow-2xl backdrop-blur-md">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-indigo-500/10 border border-indigo-500/30 rounded-xl text-indigo-400 shrink-0">
-              <BookOpen className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold tracking-wider uppercase text-indigo-200">
-                  ২. বাংলায় সুন্দর করে সাজানো গল্প (Bengali Story)
-                </h3>
-                {displayBengaliStory && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800 font-mono font-bold">
-                    {displayBengaliStory.trim().split(/\s+/).filter(Boolean).length} শব্দ • সুন্দর বাংলায় রচিত ✓
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                আপনার গল্পের আকর্ষণীয়, সিনেমাটিক ও প্রাঞ্জল বাংলা রূপান্তর।
-              </p>
-            </div>
-          </div>
-
-          {displayBengaliStory && (
-            <button
-              type="button"
-              onClick={() => handleCopyStory(displayBengaliStory)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold tracking-wider transition-all cursor-pointer active:scale-95 shadow self-start sm:self-auto"
-            >
-              {copiedStory ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-indigo-200" />
-                  <span>গল্প কপি হয়েছে! ✓</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>গল্প কপি করুন (Copy Story)</span>
-                </>
-              )}
-            </button>
-          )}
-        </div>
-
-        {displayBengaliStory ? (
-          <div className="mt-4 p-5 rounded-xl bg-slate-950 border border-slate-800/90 text-slate-100 text-sm leading-relaxed whitespace-pre-line font-sans shadow-inner select-all">
-            {displayBengaliStory}
-          </div>
-        ) : (
-          <div className="mt-4 p-5 rounded-xl bg-slate-950/70 border border-dashed border-slate-800 text-center">
-            <Sparkles className="w-5 h-5 text-indigo-400 mx-auto mb-1.5 opacity-80" />
-            <p className="text-xs text-slate-300 font-medium">
-              গল্প লিখে নিচের <strong className="text-amber-400 font-bold">"GENERATE ALL PROMPTS"</strong> বাটনে ক্লিক করলেই এআই গল্পটিকে সুন্দর বাংলায় সাজিয়ে এখানে লিখবে।
-            </p>
-          </div>
-        )}
-      </section>
-
-      {/* ========================================================
-          ৩. GENERATE BUTTON (জেনারেট বাটন)
-          Placed directly under the Story Box!
+          ACTION BUTTONS BAR: GENERATE & PROMINENT CLEAR BUTTON
+          "cliar button akta set atatey click korley agey ja toiri korci sob cole jabe clicn page asbe abar genareayte kora jabe"
           ======================================================== */}
       <section className="flex flex-col sm:flex-row items-center justify-center gap-3 py-2">
+        {/* Main Generate Button */}
         <button
           type="button"
           onClick={onGenerateAll}
           disabled={!rawStory.trim() || isProcessing}
           className="w-full sm:w-auto min-w-[340px] flex items-center justify-center gap-3 px-8 py-4 rounded-2xl bg-gradient-to-r from-amber-400 via-rose-500 to-indigo-600 hover:from-amber-300 hover:via-rose-400 hover:to-indigo-500 text-slate-950 font-black text-sm tracking-wider uppercase transition-all shadow-2xl shadow-rose-950/50 active:scale-95 disabled:opacity-50 cursor-pointer ring-2 ring-amber-400/50"
-          title="Generate all prompts directly in one click"
+          title="Generate character image prompt and all video prompts in one click"
         >
           <Zap className="w-5 h-5 fill-slate-950 text-slate-950 animate-bounce" />
           <div className="flex flex-col items-start text-left">
             <span className="text-sm font-black tracking-wide leading-tight">
-              🎬 GENERATE ALL PROMPTS (সব প্রম্পট তৈরি করুন)
+              🎬 GENERATE ALL PROMPTS
             </span>
             <span className="text-[10px] font-bold text-slate-900 opacity-90 font-mono">
-              ক্যারেক্টার ইমেজ প্রম্পট • {calculatedSceneCount}টি ভিডিও প্রম্পট • ২৫টি ট্যাগ-হ্যাশট্যাগ
+              1 Master Grid Image Prompt • {calculatedSceneCount} Video Prompts • Complete Metadata
             </span>
           </div>
         </button>
 
-        {hasGeneratedOutputs && (
-          <button
-            type="button"
-            onClick={onResetAll}
-            className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-4 rounded-2xl bg-slate-950 hover:bg-slate-900 text-slate-400 hover:text-slate-200 font-bold text-xs border border-slate-800 transition-all cursor-pointer active:scale-95"
-            title="Start fresh project"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>নতুন গল্প (Reset)</span>
-          </button>
-        )}
+        {/* Prominent Clear / Reset Button - Always available to give a 100% clean page */}
+        <button
+          type="button"
+          onClick={onResetAll}
+          className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-slate-900 hover:bg-rose-950/40 text-slate-300 hover:text-rose-300 font-bold text-xs uppercase tracking-wider border border-slate-800 hover:border-rose-500/50 transition-all cursor-pointer active:scale-95 shadow-lg"
+          title="Clear all inputs and results to start fresh with a clean page"
+        >
+          <RotateCcw className="w-4 h-4 text-rose-400" />
+          <span>Clear All (Clean Page)</span>
+        </button>
       </section>
 
       {/* Ongoing processing banner */}
@@ -530,20 +503,111 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
           <div className="w-5 h-5 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin shrink-0" />
           <div className="text-xs text-indigo-200">
             <span className="font-bold text-indigo-300 block text-sm">
-              {stepMessage || 'Processing cinematic pipeline with Gemini API...'}
+              {stepMessage || 'Processing cinematic pipeline with Gemini AI...'}
             </span>
             <span className="text-[11px] text-slate-400">
-              গল্পটি সুন্দর বাংলায় সাজানো হচ্ছে এবং প্রতিটি ভিডিও প্রম্পট দ্রুত তৈরি হচ্ছে, দয়া করে অপেক্ষা করুন...
+              Structuring cinematic live-action story, multi-panel storyboard grid, and sequential video prompts. Please wait...
             </span>
           </div>
         </div>
       )}
 
       {/* ========================================================
-          ৩. MASTER GRID IMAGE PROMPT BOX (১টি ছবির ভেতরেই ৮টি সিন ফ্রেম)
-          "CREACTER IMAGE PROMPT AKTAY HOBE AKTA IMAGER VITOREI JODI 8 TA VIDEO TOIRI HOI
-           EKTA IMAGER VITREI 8 IMAGE BOSANO THAKBE VIDEO JENO AMAR SUNDOVABE SURU THEKEY SES HOI"
-          ONLY ONE SINGLE MASTER PROMPT BOX!
+          2. MASTER CINEMATIC STORY SCRIPT (BENGALI NARRATIVE)
+          "are vai golpo to banglay thakbe"
+          "ei golpo ti ami banglishey likheci app oota jetuleici oi tkuki agey banlatery sajai likhbey"
+          ======================================================== */}
+      <section className="bg-slate-900/95 border border-indigo-500/30 rounded-2xl p-5 shadow-2xl backdrop-blur-md">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-indigo-500/10 border border-indigo-500/30 rounded-xl text-indigo-400 shrink-0">
+              <BookOpen className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-bold tracking-wider uppercase text-indigo-200">
+                  ২. বাংলায় সুন্দর করে সাজানো গল্প (Polished Bengali Story)
+                </h3>
+                {activeStoryText && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800 font-mono font-bold">
+                    {activeStoryText.trim().split(/\s+/).filter(Boolean).length} শব্দ • {storyLanguageTab === 'bengali' ? 'বাংলা লিপি ✓' : 'English Screenplay ✓'}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                আপনার দেওয়া গল্পটি (বাংলিশ, বাংলা বা ইংরেজি) থেকে তৈরি সুন্দর, প্রাঞ্জল ও আকর্ষণীয় পূর্ণাঙ্গ গল্প।
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            {/* Bengali / English View Switcher Tabs */}
+            <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+              <button
+                type="button"
+                onClick={() => setStoryLanguageTab('bengali')}
+                className={`flex items-center gap-1 px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  storyLanguageTab === 'bengali'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="বাংলায় সাজানো গল্প দেখুন"
+              >
+                <span>🇧🇩 বাংলা গল্প</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setStoryLanguageTab('english')}
+                className={`flex items-center gap-1 px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  storyLanguageTab === 'english'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="View English Screenplay version"
+              >
+                <span>🇺🇸 English</span>
+              </button>
+            </div>
+
+            {activeStoryText && (
+              <button
+                type="button"
+                onClick={() => handleCopyStory(activeStoryText)}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold tracking-wider transition-all cursor-pointer active:scale-95 shadow shrink-0"
+              >
+                {copiedStory ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-indigo-200" />
+                    <span>গল্প কপি হয়েছে! ✓</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy Story (গল্প কপি)</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {activeStoryText ? (
+          <div className="mt-4 p-5 rounded-xl bg-slate-950 border border-slate-800/90 text-slate-100 text-sm leading-relaxed whitespace-pre-line font-sans shadow-inner select-all">
+            {activeStoryText}
+          </div>
+        ) : (
+          <div className="mt-4 p-5 rounded-xl bg-slate-950/70 border border-dashed border-slate-800 text-center">
+            <Sparkles className="w-5 h-5 text-indigo-400 mx-auto mb-1.5 opacity-80" />
+            <p className="text-xs text-slate-300 font-medium">
+              আপনার গল্প বাংলিশ, বাংলা বা ইংরেজিতে লিখে উপরে <strong className="text-amber-400 font-bold">&quot;GENERATE ALL PROMPTS&quot;</strong> বাটনে ক্লিক করলেই এআই গল্পটিকে সুন্দর বাংলায় সাজিয়ে এখানে লিখবে।
+            </p>
+          </div>
+        )}
+      </section>
+
+      {/* ========================================================
+          3. MASTER GRID IMAGE PROMPT BOX (Single Image with all scene panels)
+          1 Image with all scenes chronologically arranged
           ======================================================== */}
       {(characters.length > 0 || scenes.length > 0) && (
         <section className="bg-slate-900/95 border border-emerald-500/40 rounded-2xl p-5 shadow-2xl backdrop-blur-md">
@@ -555,14 +619,14 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-bold tracking-wider uppercase text-emerald-300">
-                    ৩. ক্যারেক্টার ও স্টোরিবোর্ড একক ইমেজ প্রম্পট (Master Grid Image Prompt)
+                    3. Master Multi-Panel Storyboard Grid Prompt (Single Image)
                   </h3>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono font-bold">
-                    ১টি ছবির ভেতরেই {scenes.length || 8}টি সিন ফ্রেম ✓
+                    All {scenes.length || 8} Scene Panels inside 1 Master Image ✓
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  এই একটি প্রম্পট দিয়ে Midjourney বা Flux এ ১টি ছবি তৈরি করবেন, যার মধ্যে শুরু থেকে শেষ পর্যন্ত {scenes.length || 8}টি সিনের দৃশ্য গ্রিড আকারে সাজানো থাকবে।
+                  Generate this single prompt in Midjourney or Flux to produce one 16:9 contact-sheet image containing all {scenes.length || 8} chronological scenes.
                 </p>
               </div>
             </div>
@@ -575,7 +639,7 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
               {copiedGridPrompt ? (
                 <>
                   <Check className="w-4 h-4 text-emerald-200" />
-                  <span>কপি হয়েছে! ✓</span>
+                  <span>Copied! ✓</span>
                 </>
               ) : (
                 <>
@@ -599,20 +663,20 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
                 </div>
 
                 <span className="text-[11px] text-slate-400 hidden sm:inline-block font-mono">
-                  Panel 01 (শুরু) থেকে Panel {String(scenes.length || 8).padStart(2, '0')} (শেষ)
+                  Panel 01 (Opening) to Panel {String(scenes.length || 8).padStart(2, '0')} (Resolution)
                 </span>
               </div>
 
-              {/* Clean Prompt Box - ONLY PROMPT, NOTHING ELSE */}
+              {/* Clean Prompt Box - ONLY PROMPT */}
               <div className="p-4 bg-slate-900 border border-emerald-900/40 rounded-xl text-xs text-emerald-100 font-mono leading-relaxed select-all max-h-[380px] overflow-y-auto whitespace-pre-wrap">
                 {getMasterGridPrompt()}
               </div>
 
-              {/* Informative usage tip in clear Bengali */}
+              {/* Informative usage tip in clear English */}
               <div className="p-3 rounded-lg bg-emerald-950/30 border border-emerald-900/40 text-[11px] text-emerald-300/90 leading-relaxed flex items-start gap-2">
                 <span className="text-base leading-none">💡</span>
                 <span>
-                  <strong>কীভাবে ব্যবহার করবেন:</strong> উপরের বাটনটিতে ক্লিক করে প্রম্পটটি কপি করুন এবং <strong>Midjourney</strong> বা <strong>Flux</strong>-এ পেস্ট করুন। এর ফলে একটি একক ১৬:৯ ছবিতে ক্রমানুসারে শুরু থেকে শেষ পর্যন্ত <strong>{scenes.length || 8}টি প্যানেল গ্রিড</strong> হিসেবে তৈরি হবে। এই একটি ছবি ব্যবহার করে প্রতিটি ভিডিও তৈরি করলে আপনার ভিডিওর শুরু থেকে শেষ পর্যন্ত ক্যারেক্টার ও সিন ১০০% নিখুঁত ও ধারাবাহিক থাকবে!
+                  <strong>How to Use:</strong> Click the button above to copy this prompt, then paste into <strong>Midjourney (v6/v7)</strong> or <strong>Flux</strong>. It generates all <strong>{scenes.length || 8} sequential panels</strong> on a single 16:9 canvas. Using this single image anchor locks your character&apos;s face, markings, and environment across every video clip with 100% visual continuity!
                 </span>
               </div>
             </div>
@@ -621,9 +685,7 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
       )}
 
       {/* ========================================================
-          ৫. VIDEO PROMPT BOXES (একটার পর একটা ভিডিও প্রম্পট বক্স)
-          "ER EI JAIGAGULOTEY SUDU PROMPT THAKBE BAKI SOB KICU BAD"
-          ONLY the clean scene prompt box + Copy button! No start/action/end/camera clutter!
+          4. VIDEO PROMPT BOXES (Scene by Scene)
           ======================================================== */}
       {scenes.length > 0 && (
         <section className="bg-slate-900/95 border border-rose-500/40 rounded-2xl p-5 shadow-2xl backdrop-blur-md">
@@ -636,14 +698,14 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-bold tracking-wider uppercase text-rose-200">
-                    ৪. ভিডিও প্রম্পটসমূহ (Video Prompts - একটার পর একটা বক্স)
+                    4. Sequential Video Generation Prompts (Scene-by-Scene)
                   </h3>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-800 font-bold font-mono">
-                    {scenes.length}টি ভিডিও প্রম্পট
+                    {scenes.length} Video Prompts
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  প্রতিটি ভিডিওর প্রম্পট আলাদা আলাদা বক্সে সাজানো।
+                  Individual prompts optimized for Sora, Runway Gen-3, Luma Dream Machine, or Kling AI.
                 </p>
               </div>
             </div>
@@ -657,18 +719,18 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
               {copiedAllScenes ? (
                 <>
                   <Check className="w-4 h-4 text-emerald-400" />
-                  <span className="text-emerald-400 font-bold">সবগুলো প্রম্পট কপি হয়েছে! ✓</span>
+                  <span className="text-emerald-400 font-bold">All Prompts Copied! ✓</span>
                 </>
               ) : (
                 <>
                   <Copy className="w-4 h-4 text-slate-400" />
-                  <span>Copy All Scene Prompts (সবগুলো কপি)</span>
+                  <span>Copy All Scene Prompts</span>
                 </>
               )}
             </button>
           </div>
 
-          {/* Sequential Video Prompt Boxes - ONE BY ONE - ONLY PROMPT + COPY */}
+          {/* Sequential Video Prompt Boxes */}
           <div className="mt-4 space-y-3.5">
             {scenes.map((scene) => {
               const isCopied = copiedSceneNumber === scene.sceneNumber;
@@ -696,18 +758,18 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
                       {isCopied ? (
                         <>
                           <Check className="w-3.5 h-3.5 text-rose-200" />
-                          <span>সিন {scene.sceneNumber} কপি হয়েছে! ✓</span>
+                          <span>Scene {scene.sceneNumber} Copied! ✓</span>
                         </>
                       ) : (
                         <>
                           <Copy className="w-3.5 h-3.5" />
-                          <span>Copy Scene {scene.sceneNumber} Prompt</span>
+                          <span>Copy Scene {scene.sceneNumber}</span>
                         </>
                       )}
                     </button>
                   </div>
 
-                  {/* Clean Video Prompt Box - ONLY PROMPT, NOTHING ELSE */}
+                  {/* Clean Video Prompt Box */}
                   <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-200 font-mono leading-relaxed select-all">
                     {scene.fullVideoPrompt}
                   </div>
@@ -719,8 +781,7 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
       )}
 
       {/* ========================================================
-          ৫. RELEASE PACKAGE (ইউটিউব বা ফেসবুক প্যাকেজ)
-          "AGULO SOB USA BASE VIDEO HOBE AKTA YOUTUBER JONNEY AR AKTA FACBOKER JONEY"
+          5. RELEASE SUITE (YouTube or Facebook Package)
           ======================================================== */}
       {videoPackage && (() => {
         const isFB = (videoPackage.platform || platform) === 'facebook';
@@ -739,8 +800,8 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
                   <div className="flex items-center gap-2">
                     <h3 className={`text-sm font-bold tracking-wider uppercase ${isFB ? 'text-blue-200' : 'text-amber-200'}`}>
                       {isFB
-                        ? '৫. ফেসবুক রিলিজ প্যাকেজ (Facebook Watch, Reels & Feed)'
-                        : '৫. ইউটিউব সিনেমাটিক প্যাকেজ (YouTube 16:9 Cinema & SEO)'}
+                        ? '5. Facebook Viral Release Suite (Watch, Reels & Feed)'
+                        : '5. YouTube Master Cinematic Suite (16:9 Cinema & SEO)'}
                     </h3>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
                       isFB
@@ -752,15 +813,15 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
                   </div>
                   <p className="text-[11px] text-slate-400 mt-0.5">
                     {isFB
-                      ? 'আমেরিকান ফেসবুক দর্শকদের উপযোগী ভাইরাল হেডলাইন, আকর্ষণীয় ফেসবুক পোস্ট কপি (ইমোজি সহ), এবং ২০-২৫টি ফেসবুক ট্যাগ ও হ্যাশট্যাগ।'
-                      : 'আমেরিকান ইউটিউব দর্শকদের জন্য বড় এসইও ডেসক্রিপশন, চ্যাপ্টার, আকর্ষণীয় টাইটেল এবং ২০-২৫টি ভাইরাল সার্চ ট্যাগ ও হ্যাশট্যাগ।'}
+                      ? 'High-conversion viral headlines, engaging post copy with emojis, and targeted interest keywords for American Facebook audiences.'
+                      : 'High-retention SEO description, chapter timestamps, clickable titles, and search tags for American YouTube audiences.'}
                   </p>
                 </div>
               </div>
 
-              {/* Quick platform indicator / toggle */}
+              {/* Platform indicator */}
               <div className="flex items-center gap-2">
-                <span className="text-[11px] text-slate-400 font-medium">মোড:</span>
+                <span className="text-[11px] text-slate-400 font-medium">Mode:</span>
                 <span className={`px-2.5 py-1 rounded-lg text-xs font-bold border ${
                   isFB
                     ? 'bg-blue-950/80 text-blue-300 border-blue-800'
@@ -778,8 +839,8 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
                   <Sparkles className={`w-4 h-4 ${isFB ? 'text-blue-400' : 'text-indigo-400'}`} />
                   <h4 className={`text-xs font-bold uppercase tracking-wider ${isFB ? 'text-blue-300' : 'text-indigo-300'}`}>
                     {isFB
-                      ? '📌 ফেসবুক ভাইরাল হেডলাইন (Facebook Headlines - স্ক্রল-স্টপিং টাইটেল)'
-                      : '📌 ইউটিউব ভিডিও টাইটেল (YouTube Titles Box - বড় ও আকর্ষণীয় টাইটেল)'}
+                      ? '📌 Facebook Viral Headlines (Scroll-Stopping Hooks)'
+                      : '📌 YouTube Video Titles (High CTR Hooks - 3 Categories)'}
                   </h4>
                 </div>
                 <span className="text-[10px] text-slate-400 font-mono">
@@ -830,7 +891,7 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
                         {isCopied ? (
                           <>
                             <Check className="w-3.5 h-3.5 text-emerald-200" />
-                            <span>কপি হয়েছে! ✓</span>
+                            <span>Copied! ✓</span>
                           </>
                         ) : (
                           <>
@@ -852,8 +913,8 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
                   <FileText className={`w-4 h-4 ${isFB ? 'text-blue-400' : 'text-amber-400'}`} />
                   <h4 className={`text-xs font-bold uppercase tracking-wider ${isFB ? 'text-blue-300' : 'text-amber-300'}`}>
                     {isFB
-                      ? '📝 ফেসবুক পোস্ট কপি (Viral Facebook Post Copy - বিস্তারিত পোস্ট টেক্সট)'
-                      : '📝 ইউটিউব ভিডিও ডেসক্রিপশন (YouTube SEO Description Box - সিনপসিস ও চ্যাপ্টার সহ)'}
+                      ? '📝 Facebook Viral Post Copy (Detailed Post Text)'
+                      : '📝 YouTube SEO Description (With Synopsis & Chapter Timestamps)'}
                   </h4>
                   <span className="text-[10px] text-amber-400 font-mono px-2 py-0.5 rounded bg-amber-950/80 border border-amber-800 font-bold">
                     {displayDescription.trim().split(/\s+/).filter(Boolean).length} words
@@ -874,12 +935,12 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
                   {copiedDesc ? (
                     <>
                       <Check className="w-3.5 h-3.5 text-amber-200" />
-                      <span>{isFB ? 'পোস্ট কপি হয়েছে! ✓' : 'ডেসক্রিপশন কপি হয়েছে! ✓'}</span>
+                      <span>{isFB ? 'Post Copy Copied! ✓' : 'Description Copied! ✓'}</span>
                     </>
                   ) : (
                     <>
                       <Copy className="w-3.5 h-3.5" />
-                      <span>{isFB ? 'Copy Facebook Post (সম্পূর্ণ পোস্ট কপি)' : 'Copy Description (সম্পূর্ণ ডেসক্রিপশন কপি)'}</span>
+                      <span>{isFB ? 'Copy Facebook Post' : 'Copy Description'}</span>
                     </>
                   )}
                 </button>
@@ -889,9 +950,9 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
               </div>
             </div>
 
-            {/* BOX 3: TAGS & HASHTAGS (20 TO 25 ITEMS EACH) */}
+            {/* BOX 3: TAGS & HASHTAGS */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* TAGS BOX (20-25 TAGS) */}
+              {/* TAGS BOX */}
               <div className={`bg-slate-950 border ${isFB ? 'border-blue-500/40' : 'border-teal-500/40'} rounded-xl p-4.5 space-y-3 flex flex-col justify-between shadow-lg`}>
                 <div>
                   <div className="flex items-center justify-between pb-2 border-b border-slate-800 mb-2">
@@ -899,8 +960,8 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
                       <Tag className={`w-4 h-4 ${isFB ? 'text-blue-400' : 'text-teal-400'}`} />
                       <span className={`text-xs font-bold uppercase tracking-wider ${isFB ? 'text-blue-300' : 'text-teal-300'}`}>
                         {isFB
-                          ? `🏷️ ফেসবুক ইন্টারেস্ট কিওয়ার্ড (${videoPackage.tags.length}টি ট্যাগ)`
-                          : `🏷️ ইউটিউব সার্চ ট্যাগ (${videoPackage.tags.length}টি ট্যাগ)`}
+                          ? `🏷️ Facebook Interest Keywords (${videoPackage.tags.length} Tags)`
+                          : `🏷️ YouTube Search Tags (${videoPackage.tags.length} Tags)`}
                       </span>
                     </div>
                     <button
@@ -918,7 +979,7 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
                       {copiedTags ? (
                         <>
                           <Check className="w-3.5 h-3.5 text-teal-200" />
-                          <span>সব {videoPackage.tags.length}টি ট্যাগ কপি হয়েছে! ✓</span>
+                          <span>All {videoPackage.tags.length} Tags Copied! ✓</span>
                         </>
                       ) : (
                         <>
@@ -935,12 +996,12 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
                 </div>
                 <p className="text-[11px] text-slate-400 mt-2">
                   {isFB
-                    ? 'ফেসবুক পেইজ পোস্ট, রিলস ও মেটা অ্যাডস টার্গেটিংয়ের জন্য রেডিমেড ট্যাগ।'
-                    : 'কমা দেওয়া রেডিমেড ফরম্যাট—ইউটিউব স্টুডিওর ট্যাগ বক্সে সরাসরি পেস্ট করুন।'}
+                    ? 'Comma-separated keywords ready to paste directly into Meta Business Suite or Facebook post tags.'
+                    : 'Comma-separated format ready to paste directly into the YouTube Studio Tags box.'}
                 </p>
               </div>
 
-              {/* HASHTAGS BOX (20-25 HASHTAGS) */}
+              {/* HASHTAGS BOX */}
               <div className="bg-slate-950 border border-cyan-500/40 rounded-xl p-4.5 space-y-3 flex flex-col justify-between shadow-lg">
                 <div>
                   <div className="flex items-center justify-between pb-2 border-b border-slate-800 mb-2">
@@ -948,8 +1009,8 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
                       <Hash className="w-4 h-4 text-cyan-400" />
                       <span className="text-xs font-bold uppercase tracking-wider text-cyan-300">
                         {isFB
-                          ? `#️⃣ ফেসবুক ট্রেন্ডিং হ্যাশট্যাগ (${videoPackage.hashtags.length}টি হ্যাশট্যাগ)`
-                          : `#️⃣ ইউটিউব ভাইরাল হ্যাশট্যাগ (${videoPackage.hashtags.length}টি হ্যাশট্যাগ)`}
+                          ? `#️⃣ Facebook Trending Hashtags (${videoPackage.hashtags.length} Hashtags)`
+                          : `#️⃣ YouTube Viral Hashtags (${videoPackage.hashtags.length} Hashtags)`}
                       </span>
                     </div>
                     <button
@@ -965,7 +1026,7 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
                       {copiedHashtags ? (
                         <>
                           <Check className="w-3.5 h-3.5 text-cyan-200" />
-                          <span>সব {videoPackage.hashtags.length}টি হ্যাশট্যাগ কপি হয়েছে! ✓</span>
+                          <span>All {videoPackage.hashtags.length} Hashtags Copied! ✓</span>
                         </>
                       ) : (
                         <>
@@ -989,8 +1050,8 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
                 </div>
                 <p className="text-[11px] text-slate-400 mt-2">
                   {isFB
-                    ? 'ফেসবুক ফিড, ওয়াচ এবং রিলসে সর্বোচ্চ অর্গানিক রিচের জন্য ট্রেন্ডিং হ্যাশট্যাগ।'
-                    : 'ইউটিউব ডেসক্রিপশন এবং শর্টসের জন্য ট্রেন্ডিং হ্যাশট্যাগ।'}
+                    ? 'Trending hashtags for maximum organic reach across Facebook Watch, Reels, and News Feed.'
+                    : 'High-velocity hashtags for YouTube description and Shorts.'}
                 </p>
               </div>
             </div>
@@ -1002,8 +1063,8 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
                   <ImageIcon className={`w-4 h-4 ${isFB ? 'text-blue-400' : 'text-rose-400'}`} />
                   <h4 className={`text-xs font-bold uppercase tracking-wider ${isFB ? 'text-blue-300' : 'text-rose-300'}`}>
                     {isFB
-                      ? '🎨 ফেসবুক কভার ও থাম্বনেইল প্রম্পট (Facebook Video Cover Art Prompt Box)'
-                      : '🎨 ১৬:৯ ইউটিউব থাম্বনেইল প্রম্পট (Master 16:9 Thumbnail Prompt Box)'}
+                      ? '🎨 Facebook Video Cover Art Prompt (Master 16:9 Prompt)'
+                      : '🎨 Master 16:9 YouTube Thumbnail Prompt (Cinematic Composition)'}
                   </h4>
                 </div>
                 <button
@@ -1021,7 +1082,7 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
                   {copiedThumbnail ? (
                     <>
                       <Check className="w-3.5 h-3.5 text-rose-200" />
-                      <span>কপি হয়েছে! ✓</span>
+                      <span>Copied! ✓</span>
                     </>
                   ) : (
                     <>
@@ -1036,8 +1097,8 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
               </p>
               <p className="text-[11px] text-slate-400">
                 {isFB
-                  ? 'Midjourney বা Flux এ ব্যবহার করুন (ফেসবুক ভিডিও ফিড ও রিলের জন্য অপ্টিমাইজড)।'
-                  : <>Midjourney (v6/v7) তে <code className="text-rose-300 font-mono">--ar 16:9 --style raw</code> সহ ব্যবহার করুন।</>}
+                  ? 'Generate in Midjourney or Flux (optimized for Facebook feed CTR).'
+                  : <>Use in Midjourney (v6/v7) with <code className="text-rose-300 font-mono">--ar 16:9 --style raw</code> for maximum YouTube CTR.</>}
               </p>
             </div>
           </section>

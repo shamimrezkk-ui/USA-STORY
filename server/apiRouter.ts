@@ -34,13 +34,13 @@ function formatApiErrorMessage(error: any, fallbackMessage: string): string {
   const raw = typeof error === 'string' ? error : error?.message || String(error);
 
   if (raw.includes('Empty response text')) {
-    return 'Gemini মডেল থেকে প্রতিক্রিয়া পেতে সমস্যা হয়েছিল। আমাদের স্বয়ংক্রিয় ব্যাকআপ সিস্টেম সক্রিয় রয়েছে। দয়া করে আবার জেনারেট বাটনে ক্লিক করুন। (Empty response from AI model. Automatic resilience active - please click generate again.)';
+    return 'The AI model returned an empty response. The resilience engine has recovered; please click Generate again.';
   }
   if (raw.includes('503') || raw.includes('high demand') || raw.includes('UNAVAILABLE')) {
-    return 'Gemini AI সার্ভার সাময়িকভাবে ব্যস্ত (High Traffic Demand)। আমাদের স্বয়ংক্রিয় ফলব্যাক সক্রিয় রয়েছে। অনুগ্রহ করে কয়েক সেকেন্ড পর আবার ক্লিক করুন অথবা সেটিংসে মডেল পরিবর্তন করুন।';
+    return 'The AI server is experiencing temporary high demand. Please try again in a few moments or switch to a different model in Settings.';
   }
   if (raw.includes('429') || raw.includes('RESOURCE_EXHAUSTED')) {
-    return 'Gemini API সাময়িক রেট লিমিট স্পর্শ করেছে। কিছুক্ষণ পর পুনরায় চেষ্টা করুন অথবা সেটিংসে অন্য মডেল নির্বাচন করুন। (Rate limit reached. Please wait a moment or try another model in Settings.)';
+    return 'Gemini API temporary rate limit reached. Please wait a moment or try another model in Settings.';
   }
   if (
     raw.includes('API_KEY_INVALID') ||
@@ -49,7 +49,7 @@ function formatApiErrorMessage(error: any, fallbackMessage: string): string {
     raw.includes('API key not valid') ||
     raw.includes('INVALID_ARGUMENT')
   ) {
-    return 'Gemini API Key সঠিক নয় বা মেয়াদোত্তীর্ণ। আপনার কোনো নিজস্ব কী না থাকলে Settings থেকে "Use Built-in System AI" বাটন চাপুন। (Invalid API key. If you do not have a custom key, select "Use Built-in System AI" in Settings.)';
+    return 'The custom API Key is invalid or expired. If you do not have a custom key, click "Use Built-in AI" in Settings.';
   }
 
   try {
@@ -160,12 +160,40 @@ apiRouter.post('/generate-characters', async (req: Request, res: Response) => {
   }
 });
 
-function calculateSceneCount(duration: VideoDuration, sceneCount?: any, targetVideoLength?: string): number {
+function calculateSceneCount(
+  duration: VideoDuration,
+  sceneCount?: any,
+  targetVideoLength?: string,
+  rawStory?: string
+): number {
   if (sceneCount && Number(sceneCount) > 0) {
     return Math.min(Math.max(1, Number(sceneCount)), 80);
   }
   const clipSec = duration === '10s' ? 10 : 8;
+
+  // If user selected 'auto' or didn't set length, dynamically adapt to story length
+  // e.g., "atutku golper jonney jodi 3 ta video prompt lage 3 tay dibe"
+  if (targetVideoLength === 'auto' || !targetVideoLength) {
+    if (rawStory && typeof rawStory === 'string') {
+      const words = rawStory.trim().split(/\s+/).filter(Boolean).length;
+      if (words <= 40) {
+        return 3; // Short story -> exactly 3 video prompts!
+      } else if (words <= 80) {
+        return 4;
+      } else if (words <= 140) {
+        return 5;
+      } else if (words <= 220) {
+        return 6;
+      } else {
+        return 8;
+      }
+    }
+    return 3;
+  }
+
   switch (targetVideoLength) {
+    case 'auto':
+      return 3;
     case '30s':
       return Math.round(30 / clipSec); // 3 for 10s, 4 for 8s
     case '1m':
@@ -186,12 +214,17 @@ function calculateSceneCount(duration: VideoDuration, sceneCount?: any, targetVi
 // 6. Generate Scenes
 apiRouter.post('/generate-scenes', async (req: Request, res: Response) => {
   try {
-    const { improvedStory, characters, duration, sceneCount, targetVideoLength, model } = req.body;
+    const { improvedStory, characters, duration, sceneCount, targetVideoLength, model, rawStory } = req.body;
     if (!improvedStory || !characters || !Array.isArray(characters)) {
       return res.status(400).json({ success: false, error: 'Improved story and character bible are required.' });
     }
     const dur: VideoDuration = duration === '10s' ? '10s' : '8s';
-    const computedSceneCount = calculateSceneCount(dur, sceneCount, targetVideoLength);
+    const computedSceneCount = calculateSceneCount(
+      dur,
+      sceneCount,
+      targetVideoLength,
+      rawStory || improvedStory?.fullStory || improvedStory?.bengaliStory
+    );
     const apiKey = getApiKeyFromReq(req);
     const scenes = await generateScenes(
       improvedStory,
@@ -248,7 +281,7 @@ apiRouter.post('/fast-generate', async (req: Request, res: Response) => {
 
     const apiKey = getApiKeyFromReq(req);
     const dur: VideoDuration = duration === '10s' ? '10s' : '8s';
-    const computedSceneCount = calculateSceneCount(dur, sceneCount, targetVideoLength);
+    const computedSceneCount = calculateSceneCount(dur, sceneCount, targetVideoLength, rawStory);
     const selectedModel = model || 'gemini-3.8-flash';
     const targetPlatform = platform === 'facebook' ? 'facebook' : 'youtube';
 
@@ -284,7 +317,7 @@ apiRouter.post('/full-pipeline', async (req: Request, res: Response) => {
 
     const apiKey = getApiKeyFromReq(req);
     const dur: VideoDuration = duration === '10s' ? '10s' : '8s';
-    const computedSceneCount = calculateSceneCount(dur, sceneCount, targetVideoLength);
+    const computedSceneCount = calculateSceneCount(dur, sceneCount, targetVideoLength, rawStory);
     const selectedModel = model || 'gemini-3.8-flash';
     const targetPlatform = platform === 'facebook' ? 'facebook' : 'youtube';
 

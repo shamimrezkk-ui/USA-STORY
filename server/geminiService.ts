@@ -278,7 +278,7 @@ export async function testConnection(apiKey?: string, model = 'gemini-3.8-flash'
       return {
         success: true,
         isCustom: true,
-        message: '✓ আপনার কাস্টম Gemini API Key সম্পূর্ণ সক্রিয় ও কার্যকর! (Custom API Key Verified & Connected)',
+        message: '✓ Custom Gemini API Key verified and successfully connected!',
       };
     } catch (customErr: any) {
       console.warn('[Gemini Test] Custom key verification failed:', customErr?.message);
@@ -300,7 +300,7 @@ export async function testConnection(apiKey?: string, model = 'gemini-3.8-flash'
             success: false,
             canFallbackToDefault: true,
             serverDefaultWorking: true,
-            error: 'আপনার দেওয়া কাস্টম API Key সঠিক নয় (Invalid Key)। তবে অ্যাপের বিল্ট-ইন সার্ভার Gemini AI সম্পূর্ণ সক্রিয় ও প্রস্তুত আছে। আপনি কাস্টম কী মুছে সরাসরি বিল্ট-ইন AI দিয়ে কাজ চালাতে পারেন।',
+            error: 'The custom API Key provided is invalid. However, the system built-in Gemini AI is active and ready. You may remove the custom key to use the built-in AI.',
           };
         } catch {}
       }
@@ -313,7 +313,7 @@ export async function testConnection(apiKey?: string, model = 'gemini-3.8-flash'
     return {
       success: true,
       isDefault: true,
-      message: '✓ বিল্ট-ইন AI ও সিনেমাটিক প্রম্পট ইঞ্জিন প্রস্তুত (Engine Active)',
+      message: '✓ Built-in AI & Cinematic Prompt Engine Ready (Engine Active)',
     };
   }
 
@@ -333,7 +333,7 @@ export async function testConnection(apiKey?: string, model = 'gemini-3.8-flash'
     return {
       success: true,
       isDefault: true,
-      message: '✓ সিস্টেমের অন্তর্নির্মিত Gemini AI সংযোগ ১০০% সক্রিয় ও প্রস্তুত! (Built-in Gemini AI is Connected & Ready - No Key Needed)',
+      message: '✓ Built-in Gemini AI is Connected & Ready (No Key Needed)',
     };
   } catch (serverErr: any) {
     console.warn('[Gemini Test] Server key test warning:', serverErr?.message);
@@ -342,13 +342,13 @@ export async function testConnection(apiKey?: string, model = 'gemini-3.8-flash'
       return {
         success: true,
         isDefault: true,
-        message: '✓ সিস্টেমের Gemini AI প্রস্তুত! (Free quota cooldown active - automatic fallback engine ready)',
+        message: '✓ Built-in Gemini AI Ready (Free quota cooldown active - automatic fallback engine ready)',
       };
     }
     return {
       success: true,
       isDefault: true,
-      message: '✓ বিল্ট-ইন AI ও সিনেমাটিক প্রম্পট ইঞ্জিন সক্রিয় ও প্রস্তুত! (Resilient Prompt Engine Ready)',
+      message: '✓ Built-in AI & Cinematic Prompt Engine Active & Ready',
     };
   }
 }
@@ -1220,13 +1220,13 @@ Yet hope appeared in the simplest of American rituals. The warm amber glow of a 
 
 Inside, wrapped in a thick, dry microfiber towel, the trembling finally subsided. A warm bowl of nourishment and the steady, reassuring heartbeat of a new companion replaced the cold fear of the storm. As the fire crackled in the hearth and the rain tapped harmlessly against the windowpane, ${charName} rested peacefully, having finally found safety, belonging, and a forever home in the heart of America.`;
 
-  const bengaliStory = `এক বৃষ্টির সন্ধ্যায় আমেরিকার এক শান্ত শহরতলির আবাসিক এলাকায় ঘটেছিল এক হৃদয়স্পর্শী ঘটনা। প্রশান্ত মহাসাগরীয় উত্তর-পশ্চিমের একটি সুন্দর ক্রাফটসম্যান বাড়ির বারান্দার নিচে আশ্রয় নিয়েছিল ছোট্ট এক অসহায় বিড়ালছানা 'মিলো'। হঠাৎ নেমে আসা তীব্র শরৎকালীন বৃষ্টিতে চারপাশের অ্যাসফল্ট রাস্তাঘাট ভিজে একাকার হয়ে গিয়েছিল। বৃষ্টির ঠান্ডা পানিতে মিলোর ছোট্ট শরীরটি থরথর করে কাঁপছিল, তার ঘন কমলা লোমগুলো ভিজে লেপ্টে গিয়েছিল। নিঃসঙ্গতা ও ঠান্ডায় তার প্রতি মুহূর্ত কাটছিল চরম আতঙ্কে।
+  const bengaliStory = `এক বৃষ্টির সন্ধ্যায় আমেরিকার এক শান্ত শহরতলির আবাসিক এলাকায় ঘটেছিল এক হৃদয়স্পর্শী ঘটনা। প্রশান্ত মহাসাগরীয় উত্তর-পশ্চিমের একটি সুন্দর ক্রাফটসম্যান বাড়ির বারান্দার নিচে আশ্রয় নিয়েছিল ছোট্ট এক অসহায় বিড়ালছানা '${charName}'। হঠাৎ নেমে আসা তীব্র শরৎকালীন বৃষ্টিতে চারপাশের অ্যাসফল্ট রাস্তাঘাট ভিজে একাকার হয়ে গিয়েছিল। বৃষ্টির ঠান্ডা পানিতে ছোট্ট শরীরটি থরথর করে কাঁপছিল, তার ঘন লোমগুলো ভিজে লেপ্টে গিয়েছিল। নিঃসঙ্গতা ও ঠান্ডায় তার প্রতি মুহূর্ত কাটছিল চরম আতঙ্কে।
 
-সন্ধ্যার আবছা নীল আলো যখন শহরতলির রাস্তায় নেমে এলো, মিলো একটু আশ্রয়ের খোঁজে কাঠের সিঁড়ি বেয়ে রাস্তায় নেমে এলো। আমেরিকান সেই চওড়া রাস্তা, সারিবদ্ধ বাড়িঘর আর নিস্তব্ধ পরিবেশ তার কাছে ছিল এক অজানা ভয়ের জগৎ। দূর থেকে চলে যাওয়া গাড়ির হেডলাইটের আলোয় রাস্তায় বৃষ্টির জল চকচক করছিল। আতঙ্কে মিলো রাস্তার পাশে থাকা একটি আমেরিকান ড্রাইভওয়ে মেইলবক্সের নিচে গুটিসুটি মেরে বসে রইল। তার চোখ দুটি ছিল করুণ ও ক্ষুধায় কাতর।
+সন্ধ্যার আবছা নীল আলো যখন শহরতলির রাস্তায় নেমে এলো, সে একটু আশ্রয়ের খোঁজে কাঠের সিঁড়ি বেয়ে রাস্তায় নেমে এলো। আমেরিকান সেই চওড়া রাস্তা, সারিবদ্ধ বাড়িঘর আর নিস্তব্ধ পরিবেশ তার কাছে ছিল এক অজানা ভয়ের জগৎ। দূর থেকে চলে যাওয়া গাড়ির হেডলাইটের আলোয় রাস্তায় বৃষ্টির জল চকচক করছিল। আতঙ্কে রাস্তার পাশে থাকা একটি আমেরিকান ড্রাইভওয়ে মেইলবক্সের নিচে গুটিসুটি মেরে বসে রইল। তার চোখ দুটি ছিল করুণ ও ক্ষুধায় কাতর।
 
-ঠিক সেই মুহূর্তে ঘরের ভেতর থেকে একরাশ উষ্ণ হলুদ আলো ছড়িয়ে পড়ল ভেজা বারান্দায়। বাড়ির সদর দরজাটি খুলে গেল এবং একজন দয়ালু আমেরিকান ব্যক্তি বাইরে এসে খেয়াল করলেন বৃষ্টির ছাঁটে কাঁপতে থাকা ছোট্ট প্রাণীটিকে। তিনি কোনো তাড়াহুড়ো না করে নরম কণ্ঠে কথা বলতে বলতে হাঁটু গেড়ে বসে স্নেহের হাত বাড়িয়ে দিলেন। অচেনা কণ্ঠের সেই পরম মমতা বুঝতে পেরে মিলো এক পা দু পা করে অন্ধকারের মায়াজাল ছিন্ন করে এগিয়ে এলো সেই উষ্ণ হাতের দিকে।
+ঠিক সেই মুহূর্তে ঘরের ভেতর থেকে একরাশ উষ্ণ হলুদ আলো ছড়িয়ে পড়ল ভেজা বারান্দায়। বাড়ির সদর দরজাটি খুলে গেল এবং একজন দয়ালু আমেরিকান ব্যক্তি বাইরে এসে খেয়াল করলেন বৃষ্টির ছাঁটে কাঁপতে থাকা ছোট্ট প্রাণীটিকে। তিনি কোনো তাড়াহুড়ো না করে নরম কণ্ঠে কথা বলতে বলতে হাঁটু গেড়ে বসে স্নেহের হাত বাড়িয়ে দিলেন। অচেনা কণ্ঠের সেই পরম মমতা বুঝতে পেরে ছোট্ট ছানাটি এক পা দু পা করে অন্ধকারের মায়াজাল ছিন্ন করে এগিয়ে এলো সেই উষ্ণ হাতের দিকে।
 
-ঘরের ভেতরে এক নরম তোয়ালেতে জড়িয়ে নেওয়ার পর ধীরে ধীরে মিলোর কাঁপুনি থেমে গেল। এক বাটি গরম খাবার আর ফায়ারপ্লেসের আগুনের উষ্ণতায় নিমিষেই দূর হয়ে গেল দীর্ঘ ক্লান্তির ভয়। বাইরে তখনো কাচের জানালায় বৃষ্টির মৃদু শব্দ হচ্ছে, কিন্তু মিলো এখন আর গৃহহীন নয়। এক অচেনা মানুষের ভালোবাসায় সে খুঁজে পেল তার চিরদিনের নিরাপদ ঠিকানা।`;
+ঘরের ভেতরে এক নরম তোয়ালেতে জড়িয়ে নেওয়ার পর ধীরে ধীরে তার কাঁপুনি থেমে গেল। এক বাটি গরম খাবার আর ফায়ারপ্লেসের আগুনের উষ্ণতায় নিমিষেই দূর হয়ে গেল দীর্ঘ ক্লান্তির ভয়। বাইরে তখনো কাচের জানালায় বৃষ্টির মৃদু শব্দ হচ্ছে, কিন্তু সে এখন আর গৃহহীন নয়। এক অচেনা মানুষের ভালোবাসায় সে খুঁজে পেল তার চিরদিনের নিরাপদ ঠিকানা।`;
 
   const defaultTitles = isFacebook
     ? [
@@ -1376,14 +1376,21 @@ export async function fastGenerateCinematicSuite(
   const isFacebook = platform === 'facebook';
 
   const systemInstruction = `You are an elite Hollywood Director of Photography, Screenwriter, Character Designer, and AI Prompt Specialist.
-You have native mastery over Bengali (বাংলা), Banglish (Romanized Bengali), and English.
-You transform raw user stories into production-ready cinematic live-action video projects tailored for a USA audience and optimized for ${isFacebook ? 'FACEBOOK (Facebook Watch, Reels, and Viral Feed)' : 'YOUTUBE (16:9 Widescreen Feature, SEO, and High CTR)'}.
+You have native mastery over Bengali (বাংলা), Banglish (Romanized Bengali like 'ekta chotto biral chilo, brishtite bhijchilo...'), and English.
+The user may provide their story in Banglish, English, or Bengali script. You must deeply understand whatever the user wrote!
+
+CRITICAL STEP 1: POLISHED BENGALI STORY (বাংলায় সুন্দর করে সাজানো গল্প)
+- You MUST take whatever story the user provided (even if written in Banglish or English) and FIRST rewrite, polish, and structure it into a complete, captivating, and emotionally moving story in NATIVE BENGALI SCRIPT (বাংলা ভাষা).
+- It MUST be written in pure, authentic Bengali script (বাংলা লিপি), divided into rich cinematic paragraphs with deep emotional resonance.
+- Never output Banglish or English in 'bengaliStory'.
+
+CRITICAL STEP 2: DYNAMIC SCENE PROMPTS (${targetCount} SCENES)
+- Generate EXACTLY ${targetCount} Sequential Live-Action Video Prompts (strictly paced for ${duration} each, total video runtime: ~${totalSec} seconds / ${totalMin} minutes).
+- If ${targetCount} is 3, generate exactly 3 sequential scenes (Scene 1: Introduction/Premise, Scene 2: Tension/Turning Point, Scene 3: Emotional Resolution).
+- If ${targetCount} is 6 or more, pace the narrative arc accordingly.
+- Each video prompt MUST be in English, engineered for Sora / Runway Gen-3 / Luma Dream Machine / Kling with ultra-detailed 35mm photorealistic live-action specifications (200-300 words per scene).
+
 MANDATORY USA BASE: All stories, characters, and scenes MUST be set in authentic USA environments (American craftsman houses, suburban streets with yellow line road markings, American porches, mailboxes, fire hydrants, US weather, American realism).
-GENERATE THE COMPLETE ASSETS IN ONE LIGHTNING-FAST PASS:
-1. Characters & Master Image Reference Prompts (permanent consistency lock for Midjourney / Flux / Imagen).
-2. Improved Cinematic Screenplay (USA suburban / cinematic setting with emotional depth).
-3. EXACTLY ${targetCount} Sequential Live-Action Video Prompts (strictly paced for ${duration} each, total video runtime: ~${totalSec} seconds / ${totalMin} minutes).
-4. Release package tailored for ${isFacebook ? 'FACEBOOK' : 'YOUTUBE'}: Suggested Titles/Headlines (Cinematic, Clickable, Emotional), Post Copy/SEO Description, 20-25 Tags, 20-25 Hashtags, and Master Thumbnail Prompt.
 Output strictly a valid JSON object matching the requested schema.`;
 
   const prompt = `Story:
@@ -1396,12 +1403,22 @@ Target clip duration: ${duration}
 Total video length: ~${totalMin} minutes (${totalSec} seconds total)
 Required number of scenes: EXACTLY ${targetCount} sequential scenes (from Scene 1 to Scene ${targetCount})
 
+CRITICAL MULTILINGUAL & BANGLISH ADAPTATION:
+The raw story above may be written in:
+1. Banglish (Romanized Bengali, e.g. "ekta chotto biral rain er moddhe...", "Peter ashlo and bachaley...", etc.)
+2. Native Bengali script (বাংলা)
+3. English or mixed code-switching
+You MUST understand every word, slang, and emotional detail.
+FIRST: In 'bengaliStory', adapt the entire story into beautiful, natural, grammatically correct NATIVE BENGALI SCRIPT (বাংলা লিপি). Capture everything the user conveyed, formatted into 3 to 5 rich paragraphs in proper Bengali.
+SECOND: In 'fullStory', provide the complete cinematic English screenplay version (350-500 words).
+THIRD: In 'scenes', generate EXACTLY ${targetCount} sequential video prompts.
+
 CRITICAL: The "scenes" array in your JSON output MUST contain EXACTLY ${targetCount} scene objects.
-Scene 1 to Scene ${targetCount} must form a complete cinematic narrative arc:
-- Opening scenes establish characters, authentic USA setting, and atmosphere.
-- Middle scenes build tension, struggle, rising action, and journey.
-- Climax scenes show the pivotal moment and turning point.
-- Final scenes provide the emotional resolution and aftermath.
+If ${targetCount} is 3, provide exactly 3 scene objects:
+- Scene 1: Beginning, establishment of character & authentic USA rainy/suburban setting.
+- Scene 2: The struggle, tension, or turning point encounter.
+- Scene 3: The climactic rescue, warmth, and emotional resolution.
+If ${targetCount} is more than 3, distribute the narrative evenly across all ${targetCount} scenes.
 
 CRITICAL USER QUALITY & WORD-COUNT CONSTRAINTS (MANDATORY):
 1. 'fullVideoPrompt' (SCENE VIDEO PROMPTS):
@@ -1432,8 +1449,9 @@ CRITICAL USER QUALITY & WORD-COUNT CONSTRAINTS (MANDATORY):
      - Accurate timestamp breakdown for every scene (0:00, 0:10, 0:20...).
      - Creator call-to-action & subscribe hook.`}
 
-4. 'bengaliStory' (BENGALI STORY):
-   - সম্পূর্ণ গল্পটি ৩৫০ থেকে ৫০০ শব্দের সুন্দর, প্রাঞ্জল ও আকর্ষণীয় বাংলায় সাজিয়ে লিখুন (৪-৫টি বড় অনুচ্ছেদে আবেগময় সিনেমাটিক ভাষায় বর্ণনা করা সম্পূর্ণ গল্প)।
+4. 'bengaliStory' (সম্পূর্ণ গল্প বাংলায়):
+   - CRITICAL REQUIREMENT: সম্পূর্ণ গল্পটি ৩৫০ থেকে ৫০০ শব্দের সুন্দর, প্রাঞ্জল ও আকর্ষণীয় বাংলায় সাজিয়ে লিখুন (৪-৫টি বড় অনুচ্ছেদে আবেগময় সিনেমাটিক ভাষায় বর্ণনা করা সম্পূর্ণ গল্প)।
+   - Write this in native Bengali script (বাংলা ভাষা).
 
 5. 'masterGridImagePrompt' (SINGLE MASTER MULTI-PANEL STORYBOARD GRID IMAGE PROMPT):
    - CRITICAL USER REQUIREMENT: Generate ONE SINGLE Master Image Prompt where ALL ${targetCount} video scenes are arranged chronologically inside ONE SINGLE IMAGE (${targetCount}-panel contact sheet grid, e.g. 4x2 layout for 8 scenes).
@@ -1446,7 +1464,7 @@ Generate the entire cinematic suite in JSON with this exact structure:
     "title": "Large Compelling Cinematic Title (25 to 30 words multi-part hook)",
     "logline": "Detailed 2-sentence compelling logline",
     "fullStory": "Vivid cinematic story paragraphs set in realistic USA environment (350-500 words)",
-    "bengaliStory": "গল্পটি সুন্দর, প্রাঞ্জল ও আকর্ষণীয় বাংলায় সাজিয়ে লেখা সম্পূর্ণ গল্প (Detailed story beautifully written in clean, engaging Bengali paragraphs with emotional depth and cinematic flow - 350 to 500 words in 4 to 5 rich paragraphs)",
+    "bengaliStory": "সম্পূর্ণ গল্পটি সুন্দর, প্রাঞ্জল ও আকর্ষণীয় বাংলায় সাজিয়ে লেখা সম্পূর্ণ গল্প (Detailed story beautifully written in clean, engaging Bengali paragraphs with emotional depth and cinematic flow - 350 to 500 words in 4 to 5 rich paragraphs in native Bengali script)",
     "cinematicTone": "Atmospheric, emotional photorealistic live-action",
     "emotionalPacing": "Building tension to heartwarming resolution",
     "usaSettingAdaptation": "Authentic American suburban or urban neighborhood",

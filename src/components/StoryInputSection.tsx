@@ -1,27 +1,24 @@
 import React from 'react';
-import { 
-  Clapperboard, 
-  Clock, 
-  Sparkles, 
-  Wand2, 
-  Languages, 
-  Settings as SettingsIcon,
-  Mic,
-  Zap,
+import {
+  Clapperboard,
+  Sparkles,
+  Wand2,
+  Clock,
   Film,
-  Layers,
+  Zap,
+  Settings as SettingsIcon,
 } from 'lucide-react';
-import type { VideoDuration, TargetVideoLength } from '../types/index.ts';
 import { VoiceInputController } from './VoiceInputController.tsx';
+import type { VideoDuration, TargetVideoLength } from '../types/index.ts';
 
 interface StoryInputSectionProps {
   storyText: string;
-  onStoryTextChange: (val: string) => void;
+  onStoryTextChange: (text: string) => void;
   duration: VideoDuration;
-  onDurationChange: (dur: VideoDuration) => void;
+  onDurationChange: (duration: VideoDuration) => void;
   targetVideoLength: TargetVideoLength;
-  onTargetVideoLengthChange: (len: TargetVideoLength) => void;
-  customSceneCount: number;
+  onTargetVideoLengthChange: (length: TargetVideoLength) => void;
+  customSceneCount?: number;
   onCustomSceneCountChange: (count: number) => void;
   onAnalyze: () => void;
   onRunFullPipeline: () => void;
@@ -31,7 +28,7 @@ interface StoryInputSectionProps {
   voiceLanguage: string;
   onVoiceLanguageChange: (lang: string) => void;
   selectedModel: string;
-  apiKey?: string;
+  apiKey: string;
   onOpenSettings?: () => void;
 }
 
@@ -42,7 +39,7 @@ export const StoryInputSection: React.FC<StoryInputSectionProps> = ({
   onDurationChange,
   targetVideoLength,
   onTargetVideoLengthChange,
-  customSceneCount,
+  customSceneCount = 6,
   onCustomSceneCountChange,
   onAnalyze,
   onRunFullPipeline,
@@ -55,15 +52,20 @@ export const StoryInputSection: React.FC<StoryInputSectionProps> = ({
   apiKey,
   onOpenSettings,
 }) => {
-  // Detect Bengali script
-  const hasBengaliScript = /[\u0980-\u09FF]/.test(storyText);
-
-  // Compute calculated scene count
+  // Compute scene count based on duration and target video length
   const getComputedSceneCount = () => {
     if (targetVideoLength === 'custom') {
       return Math.max(1, Math.min(customSceneCount || 6, 80));
     }
     const clipSec = duration === '10s' ? 10 : 8;
+    if (targetVideoLength === 'auto') {
+      const words = storyText.trim().split(/\s+/).filter(Boolean).length;
+      if (words <= 40) return 3; // Short story -> exactly 3 video prompts!
+      if (words <= 80) return 4;
+      if (words <= 140) return 5;
+      if (words <= 220) return 6;
+      return 8;
+    }
     switch (targetVideoLength) {
       case '30s': return Math.round(30 / clipSec); // 3 for 10s, 4 for 8s
       case '1m': return Math.round(60 / clipSec); // 6 for 10s, 8 for 8s
@@ -79,22 +81,22 @@ export const StoryInputSection: React.FC<StoryInputSectionProps> = ({
 
   const getTargetLengthLabel = () => {
     switch (targetVideoLength) {
-      case '30s': return '৩০ সেকেন্ড (30s)';
-      case '1m': return '১ মিনিট (1m)';
-      case '2m': return '২ মিনিট (2m)';
-      case '3m': return '৩ মিনিট (3m)';
-      case '5m': return '৫ মিনিট (5m)';
-      case '10m': return '১০ মিনিট (10m)';
-      case 'custom': return `কাস্টম (${customSceneCount} সিন)`;
-      default: return '১ মিনিট';
+      case 'auto': return `Auto (${calculatedSceneCount} Prompts)`;
+      case '30s': return '30 Seconds (3 Prompts)';
+      case '1m': return '1 Minute (6 Prompts)';
+      case '2m': return '2 Minutes (12 Prompts)';
+      case '3m': return '3 Minutes (18 Prompts)';
+      case '5m': return '5 Minutes (30 Prompts)';
+      case '10m': return '10 Minutes (60 Prompts)';
+      case 'custom': return `Custom (${customSceneCount} Scenes)`;
+      default: return 'Auto';
     }
   };
 
   return (
     <section className="bg-slate-900/95 border border-slate-800 rounded-2xl p-5 shadow-2xl backdrop-blur-md mb-8">
-      {/* Top Header - Single Clean Row with Horizontal Alignment */}
+      {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
-        {/* Left Side: Title & Badges */}
         <div className="flex items-center gap-2.5">
           <div className="p-2 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-400 shrink-0">
             <Clapperboard className="w-4 h-4 text-rose-400" />
@@ -102,10 +104,10 @@ export const StoryInputSection: React.FC<StoryInputSectionProps> = ({
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-sm font-bold tracking-wider uppercase text-rose-200">
-                Story Input & Video Engine
+                Story Input &amp; Video Engine
               </h2>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-medium">
-                বাংলা • Banglish • English
+                Live-Action USA Narrative
               </span>
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5">
@@ -114,7 +116,6 @@ export const StoryInputSection: React.FC<StoryInputSectionProps> = ({
           </div>
         </div>
 
-        {/* Right Side: Length Selector & Settings Button (Horizontal on same line) */}
         <div className="flex items-center gap-2 shrink-0">
           {/* Duration Selector */}
           <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
@@ -152,7 +153,7 @@ export const StoryInputSection: React.FC<StoryInputSectionProps> = ({
               title="Open Gemini API & Model Settings"
             >
               <SettingsIcon className="w-3.5 h-3.5 text-amber-400" />
-              <span className="font-semibold text-xs">সেটিংস</span>
+              <span className="font-semibold text-xs">Settings</span>
             </button>
           )}
         </div>
@@ -176,18 +177,19 @@ export const StoryInputSection: React.FC<StoryInputSectionProps> = ({
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
             <Film className="w-3.5 h-3.5 text-rose-400" />
-            <span>মোট ভিডিওর দৈর্ঘ্য (Target Video Length):</span>
+            <span>Target Video Length:</span>
           </div>
           <div className="flex flex-wrap items-center gap-1">
             {(
               [
+                { id: 'auto', label: '⚡ Auto (3+p)', count10: calculatedSceneCount, count8: calculatedSceneCount },
                 { id: '30s', label: '30s', count10: 3, count8: 4 },
-                { id: '1m', label: '1 Min (১ মি)', count10: 6, count8: 8 },
-                { id: '2m', label: '2 Min (২ মি)', count10: 12, count8: 15 },
-                { id: '3m', label: '3 Min (৩ মি)', count10: 18, count8: 23 },
-                { id: '5m', label: '5 Min (৫ মি)', count10: 30, count8: 38 },
-                { id: '10m', label: '10 Min (১০ মি)', count10: 60, count8: 75 },
-                { id: 'custom', label: 'কাস্টম', count10: customSceneCount, count8: customSceneCount },
+                { id: '1m', label: '1 Min', count10: 6, count8: 8 },
+                { id: '2m', label: '2 Min', count10: 12, count8: 15 },
+                { id: '3m', label: '3 Min', count10: 18, count8: 23 },
+                { id: '5m', label: '5 Min', count10: 30, count8: 38 },
+                { id: '10m', label: '10 Min', count10: 60, count8: 75 },
+                { id: 'custom', label: 'Custom', count10: customSceneCount, count8: customSceneCount },
               ] as const
             ).map((opt) => {
               const active = targetVideoLength === opt.id;
@@ -202,7 +204,7 @@ export const StoryInputSection: React.FC<StoryInputSectionProps> = ({
                       ? 'bg-rose-500 text-slate-950 shadow-md ring-1 ring-rose-400 font-extrabold'
                       : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800 hover:text-white'
                   }`}
-                  title={`${opt.label} ভিডিওর জন্য ${promptCount}টি প্রম্পট`}
+                  title={`${promptCount} prompts for ${opt.label} video`}
                 >
                   <span>{opt.label}</span>
                   {opt.id !== 'custom' && (
@@ -221,7 +223,7 @@ export const StoryInputSection: React.FC<StoryInputSectionProps> = ({
 
           {targetVideoLength === 'custom' && (
             <div className="flex items-center gap-1.5 pl-2 border-l border-slate-800">
-              <span className="text-xs text-slate-400 font-semibold">প্রম্পট সংখ্যা:</span>
+              <span className="text-xs text-slate-400 font-semibold">Prompt Count:</span>
               <input
                 type="number"
                 min={1}
@@ -238,12 +240,12 @@ export const StoryInputSection: React.FC<StoryInputSectionProps> = ({
         <div className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 rounded-lg border border-amber-500/40 shrink-0">
           <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
           <div className="text-[11px] text-slate-200">
-            <span>ভিডিও: <strong className="text-rose-300 font-bold">{getTargetLengthLabel()}</strong></span>
+            <span>Video: <strong className="text-rose-300 font-bold">{getTargetLengthLabel()}</strong></span>
             <span className="mx-1.5 text-slate-600">•</span>
-            <span>ক্লিপ: <strong className="text-amber-400 font-bold">{duration}</strong></span>
+            <span>Clip: <strong className="text-amber-400 font-bold">{duration}</strong></span>
             <span className="mx-1.5 text-slate-600">•</span>
             <span className="text-emerald-300 font-mono font-bold text-xs bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800">
-              {calculatedSceneCount}টি ভিডিও প্রম্পট
+              {calculatedSceneCount} Video Prompts
             </span>
           </div>
         </div>
@@ -253,20 +255,15 @@ export const StoryInputSection: React.FC<StoryInputSectionProps> = ({
       <div className="mt-2.5 relative">
         <textarea
           rows={6}
-          placeholder="এখানে বাংলা, বাংলিশ বা ইংরেজিতে আপনার গল্প লিখুন, অথবা উপরের 'ভয়েস ইনপুট' বাটনে ক্লিক করে সরাসরি কথা বলুন... (e.g. ব্রুকলিনের বৃষ্টিভেজা সন্ধ্যায় একটি ছোট্ট কমলা বিড়ালছানা... অথবা Ekta chotto biral bacha...)"
+          placeholder="Type or dictate your story here, or pick a sample story from the toolbar above... (e.g. On a cold rainy evening in Brooklyn, a tiny orange tabby kitten takes shelter beneath the wooden porch stairs of a craftsman house...)"
           value={storyText}
           onChange={(e) => onStoryTextChange(e.target.value)}
           disabled={isProcessing}
           className="w-full bg-slate-950 border border-slate-800 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 rounded-xl p-3.5 text-sm text-slate-100 placeholder-slate-500 outline-none leading-relaxed transition-colors font-sans resize-y"
         />
         <div className="absolute right-3 bottom-3 flex items-center gap-2 text-[11px] text-slate-500 font-mono pointer-events-none">
-          {hasBengaliScript && (
-            <span className="px-1.5 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-800 text-[10px]">
-              বাংলা লিপি
-            </span>
-          )}
           <span>
-            {storyText.length} ch • {storyText.split(/\s+/).filter(Boolean).length} words
+            {storyText.length} characters • {storyText.split(/\s+/).filter(Boolean).length} words
           </span>
         </div>
       </div>
@@ -287,7 +284,7 @@ export const StoryInputSection: React.FC<StoryInputSectionProps> = ({
             title="Step-by-step Story Breakdown"
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>ধাপে ধাপে (Step-by-Step)</span>
+            <span>Step-by-Step</span>
           </button>
 
           {/* Full Pipeline Button */}
@@ -308,12 +305,12 @@ export const StoryInputSection: React.FC<StoryInputSectionProps> = ({
             onClick={onFastGenerate || onRunFullPipeline}
             disabled={!storyText.trim() || isProcessing}
             className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 via-rose-500 to-indigo-500 hover:from-amber-300 hover:via-rose-400 hover:to-indigo-400 text-slate-950 font-black text-xs tracking-wider uppercase transition-all shadow-xl shadow-amber-950/40 active:scale-95 disabled:opacity-50 cursor-pointer ring-2 ring-amber-400/40"
-            title="Ultra-fast Character Image Prompt and Video Prompts in seconds"
+            title="Generate master image prompt and sequential video prompts"
           >
             <Zap className="w-4 h-4 fill-slate-950 text-slate-950 animate-bounce" />
             <div className="flex flex-col items-start text-left">
-              <span className="leading-tight">⚡ Fast Prompts (তাত্ক্ষণিক প্রম্পট)</span>
-              <span className="text-[9px] font-bold text-slate-900 opacity-90 lowercase font-mono">ক্যারেক্টার ও ভিডিও প্রম্পট সাথে সাথে</span>
+              <span className="leading-tight">⚡ Fast Prompts</span>
+              <span className="text-[9px] font-bold text-slate-900 opacity-90 lowercase font-mono">Character &amp; Video Prompts Instantly</span>
             </div>
           </button>
         </div>

@@ -247,7 +247,7 @@ ${videoPackage.hashtags.join(' ')}
           <div className="flex items-center justify-between pb-2 border-b border-slate-800">
             <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-indigo-400" />
-              <span>📌 ভিডিও টাইটেল (Title Box - 3 Categories)</span>
+              <span>📌 Video Titles (Title Box - 3 Categories)</span>
             </h3>
             <span className="text-[10px] text-slate-400 font-mono">
               YouTube & Social Optimized
@@ -284,7 +284,7 @@ ${videoPackage.hashtags.join(' ')}
                     {isCopied ? (
                       <>
                         <Check className="w-3.5 h-3.5 text-emerald-200" />
-                        <span>কপি হয়েছে!</span>
+                        <span>Copied!</span>
                       </>
                     ) : (
                       <>
@@ -305,7 +305,7 @@ ${videoPackage.hashtags.join(' ')}
             <div className="flex items-center gap-2">
               <ImageIcon className="w-4 h-4 text-rose-400" />
               <h4 className="text-xs font-bold uppercase tracking-wider text-rose-300">
-                🎨 থাম্বনেইল প্রম্পট (Thumbnail Prompt Box - 16:9 Cinematic Composition)
+                🎨 Thumbnail Prompt (Thumbnail Prompt Box - 16:9 Cinematic Composition)
               </h4>
             </div>
             <button
@@ -316,7 +316,7 @@ ${videoPackage.hashtags.join(' ')}
               {copiedThumbnail ? (
                 <>
                   <Check className="w-3.5 h-3.5 text-rose-200" />
-                  <span>কপি হয়েছে!</span>
+                  <span>Copied!</span>
                 </>
               ) : (
                 <>
@@ -342,7 +342,7 @@ ${videoPackage.hashtags.join(' ')}
               <div className="flex items-center justify-between pb-2 border-b border-slate-800 mb-2">
                 <span className="text-xs font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
                   <FileText className="w-4 h-4 text-amber-400" />
-                  📝 ভিডিও ডেসক্রিপশন (Description Box - SEO YouTube & TikTok)
+                  📝 Video SEO Description (Description Box - YouTube & TikTok)
                 </span>
                 <button
                   type="button"
@@ -352,7 +352,7 @@ ${videoPackage.hashtags.join(' ')}
                   {copiedDesc ? (
                     <>
                       <Check className="w-3.5 h-3.5 text-amber-200" />
-                      <span>কপি হয়েছে!</span>
+                      <span>Copied!</span>
                     </>
                   ) : (
                     <>
@@ -377,7 +377,7 @@ ${videoPackage.hashtags.join(' ')}
               <div className="flex items-center justify-between pb-2 border-b border-slate-800 mb-2">
                 <span className="text-xs font-bold uppercase tracking-wider text-teal-300 flex items-center gap-1.5">
                   <Tag className="w-4 h-4 text-teal-400" />
-                  🏷️ ট্যাগ ও হ্যাশট্যাগ (Tags & Hashtags Box)
+                  🏷️ Tags &amp; Hashtags Box
                 </span>
                 <div className="flex items-center gap-2">
                   <button
@@ -388,7 +388,7 @@ ${videoPackage.hashtags.join(' ')}
                     {copiedTags ? (
                       <>
                         <Check className="w-3.5 h-3.5 text-teal-200" />
-                        <span>কপি হয়েছে!</span>
+                        <span>Copied!</span>
                       </>
                     ) : (
                       <>
@@ -403,7 +403,7 @@ ${videoPackage.hashtags.join(' ')}
               {/* Comma-separated Tags Box */}
               <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 mb-3">
                 <span className="text-[10px] text-teal-400 font-bold uppercase tracking-wider block mb-1">
-                  YouTube Tags (কমা দিয়ে সাজানো):
+                  YouTube Tags (Comma-separated):
                 </span>
                 <p className="text-xs text-slate-300 font-mono select-all break-words leading-relaxed">
                   {videoPackage.tags.join(', ')}

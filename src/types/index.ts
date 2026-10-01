@@ -1,6 +1,6 @@
 export type VideoDuration = '8s' | '10s';
 
-export type TargetVideoLength = '30s' | '1m' | '2m' | '3m' | '5m' | '10m' | 'custom';
+export type TargetVideoLength = 'auto' | '30s' | '1m' | '2m' | '3m' | '5m' | '10m' | 'custom';
 
 export type TargetPlatform = 'youtube' | 'facebook';
 
@@ -64,7 +64,7 @@ export interface ImprovedStory {
   title: string;
   logline: string;
   fullStory: string;
-  bengaliStory?: string; // সুন্দর করে বাংলায় সাজিয়ে লেখা সম্পূর্ণ গল্প
+  bengaliStory?: string; // Polished narrative story text
   cinematicTone: string;
   emotionalPacing: string;
   usaSettingAdaptation: string;
