@@ -11,6 +11,8 @@ import {
   generateFinalPackage,
   formatSpokenStory,
   fastGenerateCinematicSuite,
+  analyzeVideoStory,
+  transcribeAudioVoice,
 } from './geminiService.ts';
 import type { VideoDuration } from '../src/types/index.ts';
 
@@ -65,18 +67,15 @@ function formatApiErrorMessage(error: any, fallbackMessage: string): string {
 // 1. Test Connection
 apiRouter.post('/test', async (req: Request, res: Response) => {
   try {
-    const rawCustom = req.headers['x-gemini-api-key'] || req.body?.apiKey;
+    const rawCustom = req.body?.apiKey || req.headers['x-gemini-api-key'];
     const apiKey = typeof rawCustom === 'string' ? cleanApiKey(rawCustom) : undefined;
     const model = req.body?.model || 'gemini-3.8-flash';
     const result = await testConnection(apiKey, model);
-    if (result.success) {
-      res.json(result);
-    } else {
-      res.status(400).json(result);
-    }
+    // Always return clean JSON payload (HTTP 200) to ensure client JSON parsing never encounters unexpected end of input
+    res.json(result);
   } catch (error: any) {
     console.error('API Test Error:', error);
-    res.status(400).json({
+    res.json({
       success: false,
       error: formatApiErrorMessage(error, 'Failed to connect to Gemini API. Check your key.'),
     });
@@ -164,12 +163,32 @@ function calculateSceneCount(
   duration: VideoDuration,
   sceneCount?: any,
   targetVideoLength?: string,
-  rawStory?: string
+  rawStory?: string,
+  customSeconds?: any
 ): number {
   if (sceneCount && Number(sceneCount) > 0) {
     return Math.min(Math.max(1, Number(sceneCount)), 80);
   }
   const clipSec = duration === '10s' ? 10 : 8;
+
+  // If custom exact seconds provided
+  if ((targetVideoLength === 'customSeconds' || targetVideoLength === 'custom') && customSeconds && Number(customSeconds) > 0) {
+    return Math.min(Math.max(1, Math.round(Number(customSeconds) / clipSec)), 80);
+  }
+
+  // If format is like '15s', '30s', '45s', '60s', '90s', etc.
+  const secondsMatch = typeof targetVideoLength === 'string' ? targetVideoLength.match(/^(\d+)s$/) : null;
+  if (secondsMatch) {
+    const sec = parseInt(secondsMatch[1], 10);
+    return Math.min(Math.max(1, Math.round(sec / clipSec)), 80);
+  }
+
+  // If format is like '1m', '2m', '3m', '5m', '10m'
+  const minutesMatch = typeof targetVideoLength === 'string' ? targetVideoLength.match(/^(\d+)m$/) : null;
+  if (minutesMatch) {
+    const min = parseInt(minutesMatch[1], 10);
+    return Math.min(Math.max(1, Math.round((min * 60) / clipSec)), 80);
+  }
 
   // If user selected 'auto' or didn't set length, dynamically adapt to story length
   // e.g., "atutku golper jonney jodi 3 ta video prompt lage 3 tay dibe"
@@ -191,30 +210,13 @@ function calculateSceneCount(
     return 3;
   }
 
-  switch (targetVideoLength) {
-    case 'auto':
-      return 3;
-    case '30s':
-      return Math.round(30 / clipSec); // 3 for 10s, 4 for 8s
-    case '1m':
-      return Math.round(60 / clipSec); // 6 for 10s, 8 for 8s
-    case '2m':
-      return Math.round(120 / clipSec); // 12 for 10s, 15 for 8s
-    case '3m':
-      return Math.round(180 / clipSec); // 18 for 10s, 23 for 8s
-    case '5m':
-      return Math.round(300 / clipSec); // 30 for 10s, 38 for 8s
-    case '10m':
-      return Math.round(600 / clipSec); // 60 for 10s, 75 for 8s
-    default:
-      return duration === '10s' ? 6 : 8;
-  }
+  return duration === '10s' ? 6 : 8;
 }
 
 // 6. Generate Scenes
 apiRouter.post('/generate-scenes', async (req: Request, res: Response) => {
   try {
-    const { improvedStory, characters, duration, sceneCount, targetVideoLength, model, rawStory } = req.body;
+    const { improvedStory, characters, duration, sceneCount, targetVideoLength, model, rawStory, customSeconds } = req.body;
     if (!improvedStory || !characters || !Array.isArray(characters)) {
       return res.status(400).json({ success: false, error: 'Improved story and character bible are required.' });
     }
@@ -223,7 +225,8 @@ apiRouter.post('/generate-scenes', async (req: Request, res: Response) => {
       dur,
       sceneCount,
       targetVideoLength,
-      rawStory || improvedStory?.fullStory || improvedStory?.bengaliStory
+      rawStory || improvedStory?.fullStory || improvedStory?.bengaliStory,
+      customSeconds
     );
     const apiKey = getApiKeyFromReq(req);
     const scenes = await generateScenes(
@@ -274,14 +277,14 @@ apiRouter.post('/generate-package', async (req: Request, res: Response) => {
 // 8. Lightning-Fast Single-Pass Generator (Character Image Prompt + 8s/10s Video Prompts)
 apiRouter.post('/fast-generate', async (req: Request, res: Response) => {
   try {
-    const { rawStory, duration, sceneCount, targetVideoLength, model, platform } = req.body;
+    const { rawStory, duration, sceneCount, targetVideoLength, customSeconds, model, platform } = req.body;
     if (!rawStory || typeof rawStory !== 'string' || !rawStory.trim()) {
       return res.status(400).json({ success: false, error: 'Raw story content is required.' });
     }
 
     const apiKey = getApiKeyFromReq(req);
     const dur: VideoDuration = duration === '10s' ? '10s' : '8s';
-    const computedSceneCount = calculateSceneCount(dur, sceneCount, targetVideoLength, rawStory);
+    const computedSceneCount = calculateSceneCount(dur, sceneCount, targetVideoLength, rawStory, customSeconds);
     const selectedModel = model || 'gemini-3.8-flash';
     const targetPlatform = platform === 'facebook' ? 'facebook' : 'youtube';
 
@@ -291,7 +294,8 @@ apiRouter.post('/fast-generate', async (req: Request, res: Response) => {
       computedSceneCount,
       selectedModel,
       apiKey,
-      targetPlatform
+      targetPlatform,
+      customSeconds
     );
 
     res.json({
@@ -310,14 +314,14 @@ apiRouter.post('/fast-generate', async (req: Request, res: Response) => {
 // 9. Full Pipeline (Optimized for high speed and resilience)
 apiRouter.post('/full-pipeline', async (req: Request, res: Response) => {
   try {
-    const { rawStory, duration, sceneCount, targetVideoLength, model, platform } = req.body;
+    const { rawStory, duration, sceneCount, targetVideoLength, customSeconds, model, platform } = req.body;
     if (!rawStory || typeof rawStory !== 'string' || !rawStory.trim()) {
       return res.status(400).json({ success: false, error: 'Raw story content is required.' });
     }
 
     const apiKey = getApiKeyFromReq(req);
     const dur: VideoDuration = duration === '10s' ? '10s' : '8s';
-    const computedSceneCount = calculateSceneCount(dur, sceneCount, targetVideoLength, rawStory);
+    const computedSceneCount = calculateSceneCount(dur, sceneCount, targetVideoLength, rawStory, customSeconds);
     const selectedModel = model || 'gemini-3.8-flash';
     const targetPlatform = platform === 'facebook' ? 'facebook' : 'youtube';
 
@@ -328,7 +332,8 @@ apiRouter.post('/full-pipeline', async (req: Request, res: Response) => {
       computedSceneCount,
       selectedModel,
       apiKey,
-      targetPlatform
+      targetPlatform,
+      customSeconds
     );
 
     res.json({
@@ -367,3 +372,52 @@ apiRouter.post('/format-voice', async (req: Request, res: Response) => {
     });
   }
 });
+
+// 10. Analyze Video Footage & Extract Narrative Story with Summary
+apiRouter.post('/analyze-video', async (req: Request, res: Response) => {
+  try {
+    const { videoBase64, mimeType, keyframes, fileName, model } = req.body;
+    if (!videoBase64 && (!Array.isArray(keyframes) || keyframes.length === 0)) {
+      return res.status(400).json({ success: false, error: 'Video file or video keyframes are required.' });
+    }
+    const apiKey = getApiKeyFromReq(req);
+    const result = await analyzeVideoStory(
+      { videoBase64, mimeType, keyframes, fileName },
+      model || 'gemini-3.8-flash',
+      apiKey
+    );
+    res.json({ success: true, ...result });
+  } catch (error: any) {
+    console.error('Video Analysis Error:', error);
+    res.status(500).json({
+      success: false,
+      error: formatApiErrorMessage(error, 'Failed to analyze video story.'),
+    });
+  }
+});
+
+// 11. Transcribe & Professionally Correct Spoken Audio (Bengali, Banglish, English)
+apiRouter.post('/transcribe-voice', async (req: Request, res: Response) => {
+  try {
+    const { audioBase64, mimeType, languagePreference, model } = req.body;
+    if (!audioBase64 || typeof audioBase64 !== 'string') {
+      return res.status(400).json({ success: false, error: 'Audio data is required.' });
+    }
+    const apiKey = getApiKeyFromReq(req);
+    const result = await transcribeAudioVoice(
+      audioBase64,
+      mimeType || 'audio/webm',
+      languagePreference || 'auto',
+      model || 'gemini-3.8-flash',
+      apiKey
+    );
+    res.json({ success: true, ...result });
+  } catch (error: any) {
+    console.error('Audio Transcription Error:', error);
+    res.status(500).json({
+      success: false,
+      error: formatApiErrorMessage(error, 'Failed to transcribe voice recording.'),
+    });
+  }
+});
+

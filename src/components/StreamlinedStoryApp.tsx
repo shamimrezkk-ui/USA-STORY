@@ -17,8 +17,11 @@ import {
   Settings as SettingsIcon,
   RefreshCw,
   Trash2,
+  Video,
+  Mic,
 } from 'lucide-react';
 import { VoiceInputController } from './VoiceInputController.tsx';
+import { VideoUploadAnalyzer } from './VideoUploadAnalyzer.tsx';
 import type {
   StoryAnalysis,
   ImprovedStory,
@@ -41,6 +44,8 @@ interface StreamlinedStoryAppProps {
   onPlatformChange?: (platform: TargetPlatform) => void;
   customSceneCount?: number;
   onCustomSceneCountChange: (count: number) => void;
+  customSeconds?: number;
+  onCustomSecondsChange?: (sec: number) => void;
   isProcessing: boolean;
   stepMessage: string;
   errorMessage: string | null;
@@ -72,6 +77,8 @@ export const StreamlinedStoryApp: React.FC<StreamlinedStoryAppProps> = ({
   onPlatformChange,
   customSceneCount = 6,
   onCustomSceneCountChange,
+  customSeconds = 30,
+  onCustomSecondsChange,
   isProcessing,
   stepMessage,
   errorMessage,
@@ -100,6 +107,7 @@ export const StreamlinedStoryApp: React.FC<StreamlinedStoryAppProps> = ({
   const [copiedHashtags, setCopiedHashtags] = useState<boolean>(false);
   const [copiedThumbnail, setCopiedThumbnail] = useState<boolean>(false);
   const [storyLanguageTab, setStoryLanguageTab] = useState<'bengali' | 'english'>('bengali');
+  const [inputMode, setInputMode] = useState<'text' | 'voice' | 'video'>('text');
 
   // Helper calculation for scene count
   const getCalculatedSceneCount = () => {
@@ -107,6 +115,12 @@ export const StreamlinedStoryApp: React.FC<StreamlinedStoryAppProps> = ({
       return Math.max(1, Math.min(customSceneCount || 6, 80));
     }
     const clipSec = duration === '10s' ? 10 : 8;
+
+    if (targetVideoLength === 'customSeconds') {
+      const sec = Number(customSeconds) || 30;
+      return Math.min(Math.max(1, Math.round(sec / clipSec)), 80);
+    }
+
     if (targetVideoLength === 'auto') {
       const words = rawStory.trim().split(/\s+/).filter(Boolean).length;
       if (words <= 40) return 3; // Short story -> exactly 3 video prompts!
@@ -115,15 +129,21 @@ export const StreamlinedStoryApp: React.FC<StreamlinedStoryAppProps> = ({
       if (words <= 220) return 6;
       return 8;
     }
-    switch (targetVideoLength) {
-      case '30s': return Math.round(30 / clipSec); // 3 for 10s, 4 for 8s
-      case '1m': return Math.round(60 / clipSec); // 6 for 10s, 8 for 8s
-      case '2m': return Math.round(120 / clipSec); // 12 for 10s, 15 for 8s
-      case '3m': return Math.round(180 / clipSec); // 18 for 10s, 23 for 8s
-      case '5m': return Math.round(300 / clipSec); // 30 for 10s, 38 for 8s
-      case '10m': return Math.round(600 / clipSec); // 60 for 10s, 75 for 8s
-      default: return duration === '10s' ? 6 : 8;
+
+    // Match seconds like '15s', '30s', '45s', '60s', '90s', etc.
+    const secondsMatch = typeof targetVideoLength === 'string' ? targetVideoLength.match(/^(\d+)s$/) : null;
+    if (secondsMatch) {
+      const sec = parseInt(secondsMatch[1], 10);
+      return Math.min(Math.max(1, Math.round(sec / clipSec)), 80);
     }
+
+    const minutesMatch = typeof targetVideoLength === 'string' ? targetVideoLength.match(/^(\d+)m$/) : null;
+    if (minutesMatch) {
+      const min = parseInt(minutesMatch[1], 10);
+      return Math.min(Math.max(1, Math.round((min * 60) / clipSec)), 80);
+    }
+
+    return duration === '10s' ? 6 : 8;
   };
 
   const calculatedSceneCount = getCalculatedSceneCount();
@@ -131,12 +151,20 @@ export const StreamlinedStoryApp: React.FC<StreamlinedStoryAppProps> = ({
   const getTargetLengthLabel = () => {
     switch (targetVideoLength) {
       case 'auto': return `Auto (${calculatedSceneCount} Prompts)`;
-      case '30s': return '30 Seconds (3 Prompts)';
-      case '1m': return '1 Minute (6 Prompts)';
-      case '2m': return '2 Minutes (12 Prompts)';
-      case '3m': return '3 Minutes (18 Prompts)';
-      case '5m': return '5 Minutes (30 Prompts)';
-      case '10m': return '10 Minutes (60 Prompts)';
+      case '15s': return '15 Seconds (১৫s)';
+      case '30s': return '30 Seconds (৩০s)';
+      case '45s': return '45 Seconds (৪৫s)';
+      case '60s': return '60 Seconds (৬০s / 1m)';
+      case '90s': return '90 Seconds (৯০s / 1.5m)';
+      case '120s': return '120 Seconds (১২০s / 2m)';
+      case '180s': return '180 Seconds (১৮০s / 3m)';
+      case '300s': return '300 Seconds (৩০০s / 5m)';
+      case 'customSeconds': return `${customSeconds || 30}s Seconds (নির্দিষ্ট সেকেন্ড)`;
+      case '1m': return '1 Minute (60s)';
+      case '2m': return '2 Minutes (120s)';
+      case '3m': return '3 Minutes (180s)';
+      case '5m': return '5 Minutes (300s)';
+      case '10m': return '10 Minutes (600s)';
       case 'custom': return `Custom (${customSceneCount} Prompts)`;
       default: return 'Auto';
     }
@@ -352,42 +380,70 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
               </select>
             </div>
 
-            {/* 2. Video Length Dropdown */}
+            {/* 2. Video Timer & Seconds Selector */}
             <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 focus-within:border-amber-500 transition-colors shadow-sm">
-              <Film className="w-3.5 h-3.5 text-amber-400" />
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Length:</span>
+              <Clock className="w-3.5 h-3.5 text-amber-400" />
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Timer (সেকেন্ড):</span>
               <select
                 value={targetVideoLength}
                 onChange={(e) => onTargetVideoLengthChange(e.target.value as TargetVideoLength)}
                 className="bg-transparent text-xs font-bold text-slate-100 cursor-pointer focus:outline-none pr-1"
-                aria-label="Select Target Video Length"
+                aria-label="Select Target Video Timer Seconds"
               >
                 <option value="auto" className="bg-slate-900 text-slate-100">
                   ⚡ Auto (গল্পের সাইজ অনুযায়ী ৩+ প্রম্পট / Auto Adaptive)
                 </option>
+                <option value="15s" className="bg-slate-900 text-slate-100">
+                  15 Seconds (১৫ সেকেন্ড • ২-৩টি প্রম্পট)
+                </option>
                 <option value="30s" className="bg-slate-900 text-slate-100">
-                  30s Short (৩টি ভিডিও প্রম্পট / 3 Prompts)
+                  30 Seconds (৩০ সেকেন্ড • ৩টি প্রম্পট)
                 </option>
-                <option value="1m" className="bg-slate-900 text-slate-100">
-                  1 Min (৬টি ভিডিও প্রম্পট / 6 Prompts)
+                <option value="45s" className="bg-slate-900 text-slate-100">
+                  45 Seconds (৪৫ সেকেন্ড • ৫টি প্রম্পট)
                 </option>
-                <option value="2m" className="bg-slate-900 text-slate-100">
-                  2 Min (১২টি ভিডিও প্রম্পট / 12 Prompts)
+                <option value="60s" className="bg-slate-900 text-slate-100">
+                  60 Seconds (৬০ সেকেন্ড / ১ মিনিট • ৬টি প্রম্পট)
                 </option>
-                <option value="3m" className="bg-slate-900 text-slate-100">
-                  3 Min (১৮টি ভিডিও প্রম্পট / 18 Prompts)
+                <option value="90s" className="bg-slate-900 text-slate-100">
+                  90 Seconds (৯০ সেকেন্ড / ১.৫ মিনিট • ৯টি প্রম্পট)
                 </option>
-                <option value="5m" className="bg-slate-900 text-slate-100">
-                  5 Min (৩০টি ভিডিও প্রম্পট / 30 Prompts)
+                <option value="120s" className="bg-slate-900 text-slate-100">
+                  120 Seconds (১২০ সেকেন্ড / ২ মিনিট • ১২টি প্রম্পট)
                 </option>
-                <option value="10m" className="bg-slate-900 text-slate-100">
-                  10 Min (৬০টি ভিডিও প্রম্পট / 60 Prompts)
+                <option value="180s" className="bg-slate-900 text-slate-100">
+                  180 Seconds (১৮০ সেকেন্ড / ৩ মিনিট • ১৮টি প্রম্পট)
+                </option>
+                <option value="300s" className="bg-slate-900 text-slate-100">
+                  300 Seconds (৩০০ সেকেন্ড / ৫ মিনিট • ৩০টি প্রম্পট)
+                </option>
+                <option value="600s" className="bg-slate-900 text-slate-100">
+                  600 Seconds (৬০০ সেকেন্ড / ১০ মিনিট • ৬০টি প্রম্পট)
+                </option>
+                <option value="customSeconds" className="bg-slate-900 text-slate-100">
+                  ⏱️ Custom Seconds (পছন্দমতো সেকেন্ড লিখুন)
                 </option>
                 <option value="custom" className="bg-slate-900 text-slate-100">
-                  Custom Count (পছন্দমতো সংখ্যা, যেমন ৩)
+                  🔢 Custom Prompts (পছন্দমতো প্রম্পট সংখ্যা)
                 </option>
               </select>
             </div>
+
+            {/* Custom exact seconds input if 'customSeconds' is selected */}
+            {targetVideoLength === 'customSeconds' && (
+              <div className="flex items-center gap-1.5 bg-slate-900 border border-amber-500/60 rounded-xl px-2 py-1 shadow-sm animate-pulse">
+                <span className="text-xs text-amber-300 font-semibold">সেকেন্ড (Sec):</span>
+                <input
+                  type="number"
+                  min={5}
+                  max={600}
+                  value={customSeconds}
+                  onChange={(e) => onCustomSecondsChange?.(Math.max(5, Math.min(600, Number(e.target.value) || 30)))}
+                  className="w-14 bg-slate-950 border border-slate-700 rounded-lg px-1.5 py-0.5 text-xs text-white text-center font-bold focus:outline-none focus:border-amber-400"
+                  aria-label="Custom Exact Seconds"
+                />
+              </div>
+            )}
 
             {/* Custom scene count input if 'custom' is selected */}
             {targetVideoLength === 'custom' && (
@@ -407,7 +463,7 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
 
             {/* 3. Per-Clip Duration Dropdown */}
             <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 focus-within:border-teal-500 transition-colors shadow-sm">
-              <Clock className="w-3.5 h-3.5 text-teal-400" />
+              <Film className="w-3.5 h-3.5 text-teal-400" />
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Clip:</span>
               <select
                 value={duration}
@@ -424,7 +480,7 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
           {/* Right calculation badge */}
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-indigo-500/40 text-xs">
-              <span className="text-slate-400">Total:</span>
+              <span className="text-slate-400">Timer:</span>
               <span className="text-amber-300 font-bold">{getTargetLengthLabel()}</span>
               <span className="text-slate-600">•</span>
               <span className="text-emerald-300 font-mono font-bold">{calculatedSceneCount} Video Prompts</span>
@@ -432,32 +488,180 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
           </div>
         </div>
 
-        {/* Compact Voice & Samples Toolbar */}
-        <div className="mt-3">
-          <VoiceInputController
-            currentStoryText={rawStory}
-            onUpdateStoryText={onRawStoryChange}
-            voiceLanguage={voiceLanguage}
-            onVoiceLanguageChange={onVoiceLanguageChange}
-            selectedModel={selectedModel}
-            apiKey={apiKey}
-            disabled={isProcessing}
-          />
+        {/* 1-Click Quick Seconds Presets Toolbar */}
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="text-slate-400 font-medium mr-1 flex items-center gap-1 text-[11px]">
+            <Clock className="w-3 h-3 text-amber-400" />
+            <span>টাইমার প্রিসেট (Seconds):</span>
+          </span>
+          {[
+            { id: 'auto', label: '⚡ Auto' },
+            { id: '15s', label: '15s (১৫ সে)' },
+            { id: '30s', label: '30s (৩০ সে)' },
+            { id: '45s', label: '45s (৪৫ সে)' },
+            { id: '60s', label: '60s (১ মিনিট)' },
+            { id: '90s', label: '90s (১.৫ মিনিট)' },
+            { id: '120s', label: '120s (২ মিনিট)' },
+            { id: 'customSeconds', label: '⏱️ Custom Sec' },
+          ].map((pill) => {
+            const isActive = targetVideoLength === pill.id;
+            return (
+              <button
+                key={pill.id}
+                type="button"
+                onClick={() => onTargetVideoLengthChange(pill.id as TargetVideoLength)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer border ${
+                  isActive
+                    ? 'bg-amber-500 text-slate-950 border-amber-400 shadow font-bold'
+                    : 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                {pill.label}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Story Textarea */}
+        {/* 3-Way Story Input Method Switcher: Text Story | Voice Input | Video Upload & Extract */}
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 p-1.5 rounded-xl bg-slate-950/80 border border-slate-800">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setInputMode('text')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                inputMode === 'text'
+                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm font-bold'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5 text-rose-400" />
+              <span>✍️ গল্প লিখুন (Text)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setInputMode('voice')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                inputMode === 'voice'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm font-bold'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
+              }`}
+            >
+              <Mic className="w-3.5 h-3.5 text-emerald-400" />
+              <span>🎙️ ভয়েস ইনপুট (Voice)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setInputMode('video')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                inputMode === 'video'
+                  ? 'bg-teal-500 text-slate-950 border border-teal-400 shadow-md font-black'
+                  : 'bg-teal-950/50 hover:bg-teal-900/60 text-teal-300 border border-teal-800/60 hover:border-teal-600'
+              }`}
+            >
+              <Video className="w-3.5 h-3.5" />
+              <span>📹 ভিডিও আপলোড ও সারাংশ (Video Upload)</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  inputMode === 'video'
+                    ? 'bg-slate-900 text-teal-300'
+                    : 'bg-teal-500/20 text-teal-300 border border-teal-500/30'
+                }`}
+              >
+                নতুন
+              </span>
+            </button>
+          </div>
+
+          {inputMode !== 'video' && (
+            <button
+              type="button"
+              onClick={() => setInputMode('video')}
+              className="flex items-center gap-1 text-[11px] text-teal-400 hover:text-teal-300 font-semibold cursor-pointer px-2 py-1 rounded-md hover:bg-teal-950/40 transition"
+              title="ভিডিও আপলোড করে এআই দিয়ে সারাংশ ও গল্প তৈরি করুন"
+            >
+              <Video className="w-3.5 h-3.5" />
+              <span>ভিডিও থেকে সারাংশ বের করবেন? ক্লিক করুন ➜</span>
+            </button>
+          )}
+        </div>
+
+        {/* Voice Mode Intelligence Guidance Badge */}
+        {inputMode === 'voice' && (
+          <div className="mt-2.5 p-2.5 rounded-xl bg-gradient-to-r from-emerald-950/60 to-slate-950 border border-emerald-500/40 text-emerald-200 text-xs flex items-center gap-2.5 shadow-sm animate-fadeIn">
+            <span className="p-1 rounded-lg bg-emerald-500/20 text-emerald-300 text-sm shrink-0">🎙️</span>
+            <div>
+              <span className="font-bold text-emerald-300 block text-xs">
+                প্রফেশনাল ভয়েস এআই সক্রিয় (Professional Voice Intelligence Active):
+              </span>
+              <span className="text-[11px] text-slate-300 leading-relaxed">
+                কথা বলার সময় উচ্চারণ বা বক্তব্য একটু এলোমেলো হলেও চিন্তা নেই—Gemini AI নিখুঁতভাবে আপনার মনের ভাব বুঝে সুন্দর গল্পে রূপান্তর করবে।
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Video Upload & Story Extraction Panel (Rendered when video mode is active) */}
+        {inputMode === 'video' && (
+          <div className="mt-3">
+            <VideoUploadAnalyzer
+              onStoryExtracted={(storyText) => {
+                onRawStoryChange(storyText);
+              }}
+              onGenerateAllPrompts={onGenerateAll}
+              selectedModel={selectedModel}
+              apiKey={apiKey}
+              disabled={isProcessing}
+            />
+          </div>
+        )}
+
+        {/* Voice & Samples Toolbar (Rendered in text or voice mode) */}
+        {inputMode !== 'video' && (
+          <div className="mt-3">
+            <VoiceInputController
+              currentStoryText={rawStory}
+              onUpdateStoryText={onRawStoryChange}
+              voiceLanguage={voiceLanguage}
+              onVoiceLanguageChange={onVoiceLanguageChange}
+              selectedModel={selectedModel}
+              apiKey={apiKey}
+              disabled={isProcessing}
+            />
+          </div>
+        )}
+
+        {/* Story Textarea (Always accessible with contextual header in video mode) */}
         <div className="mt-3 relative">
+          {inputMode === 'video' && (
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <span className="text-[11px] font-bold text-teal-400 uppercase tracking-wider flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5" />
+                <span>ভিডিও থেকে প্রাপ্ত ও এডিটযোগ্য গল্প (Extracted Story Narrative):</span>
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">
+                {rawStory.length} characters • {rawStory.split(/\s+/).filter(Boolean).length} words
+              </span>
+            </div>
+          )}
           <textarea
-            rows={5}
-            placeholder="এখানে বাংলা, বাংলিশ বা ইংরেজিতে আপনার গল্প লিখুন, অথবা উপরের 'ভয়েস ইনপুট' বা Sample Stories ব্যবহার করুন... (Write or dictate your story in Bengali, Banglish, or English...)"
+            rows={inputMode === 'video' ? 4 : 5}
+            placeholder={
+              inputMode === 'video'
+                ? "ভিডিও আপলোড করলে তার সারাংশ ও সম্পূর্ণ গল্প স্বয়ংক্রিয়ভাবে এখানে চলে আসবে। আপনি চাইলে যেকোনো লাইন পরিবর্তন বা যোগ করতে পারেন..."
+                : "এখানে বাংলা, বাংলিশ বা ইংরেজিতে আপনার গল্প লিখুন, অথবা উপরের 'ভয়েস ইনপুট' বা 'ভিডিও আপলোড' ব্যবহার করুন... (Write or dictate your story in Bengali, Banglish, or English...)"
+            }
             value={rawStory}
             onChange={(e) => onRawStoryChange(e.target.value)}
             disabled={isProcessing}
             className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-100 placeholder-slate-500 focus:border-rose-500/80 focus:ring-1 focus:ring-rose-500/80 focus:outline-none resize-y leading-relaxed font-sans shadow-inner disabled:opacity-50"
           />
-          <div className="absolute right-3 bottom-3 text-[10px] text-slate-500 font-mono bg-slate-950/90 px-2 py-0.5 rounded border border-slate-800 pointer-events-none">
-            {rawStory.length} characters • {rawStory.split(/\s+/).filter(Boolean).length} words
-          </div>
+          {inputMode !== 'video' && (
+            <div className="absolute right-3 bottom-3 text-[10px] text-slate-500 font-mono bg-slate-950/90 px-2 py-0.5 rounded border border-slate-800 pointer-events-none">
+              {rawStory.length} characters • {rawStory.split(/\s+/).filter(Boolean).length} words
+            </div>
+          )}
         </div>
       </section>
 
@@ -526,16 +730,16 @@ CRITICAL STORYBOARD & CONTINUITY MANDATE:
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-sm font-bold tracking-wider uppercase text-indigo-200">
-                  ২. বাংলায় সুন্দর করে সাজানো গল্প (Polished Bengali Story)
+                  ২. বাংলায় বিস্তারিত সাজানো গল্প ও মূল সারাংশ (Detailed Story &amp; Core Essence)
                 </h3>
                 {activeStoryText && (
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800 font-mono font-bold">
-                    {activeStoryText.trim().split(/\s+/).filter(Boolean).length} শব্দ • {storyLanguageTab === 'bengali' ? 'বাংলা লিপি ✓' : 'English Screenplay ✓'}
+                    {activeStoryText.trim().split(/\s+/).filter(Boolean).length} শব্দ • {storyLanguageTab === 'bengali' ? 'বাংলা লিপি ও মূল সারাংশ ✓' : 'English Screenplay ✓'}
                   </span>
                 )}
               </div>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                আপনার দেওয়া গল্পটি (বাংলিশ, বাংলা বা ইংরেজি) থেকে তৈরি সুন্দর, প্রাঞ্জল ও আকর্ষণীয় পূর্ণাঙ্গ গল্প।
+                আপনার দেওয়া গল্প থেকে বিশদ ও আবেগঘন বিস্তারিত বিবরণ এবং স্পষ্ট মূল সারাংশ (Core Summary &amp; Moral Essence)।
               </p>
             </div>
           </div>

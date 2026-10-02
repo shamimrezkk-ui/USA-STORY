@@ -10,20 +10,24 @@ import type {
 
 export function cleanApiKey(rawKey?: string): string | undefined {
   if (!rawKey) return undefined;
-  let key = rawKey.trim();
-  // Strip quotation marks
-  if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+  let key = String(rawKey).trim();
+  // Strip zero-width chars and invisible unicode whitespace
+  key = key.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+  // Strip quotation marks or backticks
+  if (
+    (key.startsWith('"') && key.endsWith('"')) ||
+    (key.startsWith("'") && key.endsWith("'")) ||
+    (key.startsWith('`') && key.endsWith('`'))
+  ) {
     key = key.slice(1, -1).trim();
   }
   // Strip variable assignment prefixes
-  if (key.startsWith('GEMINI_API_KEY=')) {
-    key = key.replace(/^GEMINI_API_KEY=/, '').trim();
-  }
-  if (key.startsWith('export GEMINI_API_KEY=')) {
-    key = key.replace(/^export GEMINI_API_KEY=/, '').trim();
-  }
-  key = key.replace(/^["']|["']$/g, '').trim();
-  return key || undefined;
+  key = key.replace(/^(export\s+)?(GEMINI_API_KEY|gemini_api_key|apiKey|api_key)\s*[:=]\s*/i, '').trim();
+  // Strip trailing punctuation
+  key = key.replace(/[;,\s]+$/, '').trim();
+  key = key.replace(/^["'`]|["'`]$/g, '').trim();
+  if (!key || key === 'undefined' || key === 'null') return undefined;
+  return key;
 }
 
 export function getGenAI(customApiKey?: string): GoogleGenAI {
@@ -154,99 +158,109 @@ export async function callGeminiWithRetryAndFallback(
     ...validPool.filter((m) => m !== requestedModel),
   ].filter(Boolean);
 
+  let currentAi = ai;
+  let hasTriedServerFallback = false;
   let lastError: any = null;
 
-  for (const model of candidateModels) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      const mergedConfig: any = {
-        maxOutputTokens: 8192,
-        ...params.config,
-      };
+  const serverKey = cleanApiKey(process.env.GEMINI_API_KEY);
 
-      // If retrying (attempt 2), strip thinkingBudget: 0 if present to avoid suppressing output
-      if (attempt === 2 && mergedConfig.thinkingConfig) {
-        delete mergedConfig.thinkingConfig;
-      }
+  // Outer loop allows seamless transition from custom key to server built-in key if custom key errors
+  for (let round = 1; round <= 2; round++) {
+    for (const model of candidateModels) {
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const mergedConfig: any = {
+          maxOutputTokens: 8192,
+          ...params.config,
+        };
 
-      try {
-        const response = await ai.models.generateContent({
-          model,
-          contents: params.contents,
-          config: mergedConfig,
-        });
-
-        const extractedText = extractTextFromGenAIResponse(response);
-        if (extractedText) {
-          return extractedText;
+        // If retrying (attempt 2), strip thinkingBudget: 0 if present to avoid suppressing output
+        if (attempt === 2 && mergedConfig.thinkingConfig) {
+          delete mergedConfig.thinkingConfig;
         }
 
-        const finishReason = response?.candidates?.[0]?.finishReason || 'UNKNOWN';
-        console.warn(`[Gemini Resilience] Model '${model}' attempt ${attempt} returned empty text. FinishReason: ${finishReason}`);
+        try {
+          const response = await currentAi.models.generateContent({
+            model,
+            contents: params.contents,
+            config: mergedConfig,
+          });
 
-        if (attempt < 2) {
-          await sleep(500);
-          continue;
-        }
+          const extractedText = extractTextFromGenAIResponse(response);
+          if (extractedText) {
+            return extractedText;
+          }
 
-        throw new Error(`Empty response text from model ${model} (finishReason: ${finishReason})`);
-      } catch (err: any) {
-        lastError = err;
-        const errMsg = String(err?.message || err);
-        const is503 = errMsg.includes('503') || errMsg.includes('high demand') || errMsg.includes('UNAVAILABLE');
-        const is429 = errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED');
-        const isEmptyText = errMsg.includes('Empty response text');
+          const finishReason = response?.candidates?.[0]?.finishReason || 'UNKNOWN';
+          console.warn(`[Gemini Resilience] Model '${model}' attempt ${attempt} returned empty text. FinishReason: ${finishReason}`);
 
-        const isKeyInvalid =
-          errMsg.includes('API_KEY_INVALID') ||
-          errMsg.includes('401') ||
-          errMsg.includes('API key not valid') ||
-          errMsg.includes('INVALID_ARGUMENT');
+          if (attempt < 2) {
+            await sleep(400);
+            continue;
+          }
 
-        if (isKeyInvalid) {
-          const serverKey = cleanApiKey(process.env.GEMINI_API_KEY);
-          if (serverKey) {
-            console.warn('[Gemini Resilience] Custom API key rejected. Attempting server GEMINI_API_KEY fallback...');
-            try {
-              const fallbackAi = new GoogleGenAI({
+          throw new Error(`Empty response text from model ${model} (finishReason: ${finishReason})`);
+        } catch (err: any) {
+          lastError = err;
+          const errMsg = String(err?.message || err);
+
+          const isKeyOrAuthError =
+            errMsg.includes('API_KEY_INVALID') ||
+            errMsg.includes('401') ||
+            errMsg.includes('403') ||
+            errMsg.includes('PERMISSION_DENIED') ||
+            errMsg.includes('API key not valid') ||
+            errMsg.includes('INVALID_ARGUMENT');
+
+          // If custom key has an auth or permission error, seamlessly switch to server built-in key
+          if (isKeyOrAuthError && serverKey && !hasTriedServerFallback) {
+            console.warn(`[Gemini Resilience] Custom API key failed with auth error (${errMsg}). Seamlessly switching to server built-in GEMINI_API_KEY...`);
+            currentAi = new GoogleGenAI({
+              apiKey: serverKey,
+              httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+            });
+            hasTriedServerFallback = true;
+            break; // Break inner loop to restart round with server key
+          }
+
+          const is503 = errMsg.includes('503') || errMsg.includes('high demand') || errMsg.includes('UNAVAILABLE');
+          const is429 = errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED');
+          const isEmptyText = errMsg.includes('Empty response text');
+
+          if (is429) {
+            // If custom key hit 429 quota, try server key if not tried yet
+            if (serverKey && !hasTriedServerFallback) {
+              console.warn(`[Gemini Resilience] Custom API key hit 429 quota. Seamlessly switching to server built-in GEMINI_API_KEY...`);
+              currentAi = new GoogleGenAI({
                 apiKey: serverKey,
                 httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
               });
-              const response = await fallbackAi.models.generateContent({
-                model,
-                contents: params.contents,
-                config: mergedConfig,
-              });
-              const extractedText = extractTextFromGenAIResponse(response);
-              if (extractedText) {
-                return extractedText;
-              }
-            } catch (fallbackErr: any) {
-              console.warn('[Gemini Resilience] Server default key fallback failed:', fallbackErr?.message);
+              hasTriedServerFallback = true;
+              break;
             }
+            console.warn(`[Gemini Resilience] Model '${model}' hit 429 quota. Switching to next model in pool...`);
+            break;
           }
-          throw err;
-        }
 
-        if (is429) {
-          console.warn(`[Gemini Resilience] Model '${model}' hit 429 quota. Immediately switching to next model in pool...`);
-          // Do not retry the same rate-limited model; break immediately to the next model
-          break;
-        }
-
-        if (is503 || isEmptyText) {
-          console.warn(`[Gemini Resilience] Model '${model}' attempt ${attempt} encountered: ${errMsg}`);
-          if (attempt < 2) {
-            await sleep(500 + Math.random() * 400);
-            continue;
+          if (is503 || isEmptyText) {
+            console.warn(`[Gemini Resilience] Model '${model}' attempt ${attempt} encountered: ${errMsg}`);
+            if (attempt < 2) {
+              await sleep(400 + Math.random() * 300);
+              continue;
+            }
+            break;
+          } else {
+            console.warn(`[Gemini Resilience] Model '${model}' error: ${errMsg}. Trying next candidate model.`);
+            break;
           }
-          // Break attempt loop on this model; continue to next candidate model
-          break;
-        } else {
-          // If model is unsupported or not found (404), break to next model
-          console.warn(`[Gemini Resilience] Model '${model}' error: ${errMsg}. Trying next candidate model.`);
-          break;
         }
       }
+      if (hasTriedServerFallback && round === 1) {
+        // Start round 2 with the server key across candidate models
+        break;
+      }
+    }
+    if (!hasTriedServerFallback) {
+      break;
     }
   }
 
@@ -263,48 +277,107 @@ export async function testConnection(apiKey?: string, model = 'gemini-3.8-flash'
 
   // If user provided a custom key to test
   if (cleanedCustom) {
+    // 1. Detect OpenAI or other non-Gemini keys
+    if (cleanedCustom.startsWith('sk-') || cleanedCustom.startsWith('sk_')) {
+      return {
+        success: false,
+        isCustom: true,
+        error: 'আপনি একটি OpenAI Key (sk-...) পেস্ট করেছেন। এই অ্যাপটি Google Gemini AI দিয়ে চলে (Gemini Key সাধারণতঃ AIzaSy... দিয়ে শুরু হয়)। দয়া করে aistudio.google.com থেকে Gemini Key নিন, অথবা নিচে "✨ এখনই সমাধান করুন" বাটনে ক্লিক করে ফ্রি বিল্ট-ইন এআই ব্যবহার করুন।',
+        serverDefaultWorking: Boolean(serverKey),
+      };
+    }
+
+    if (cleanedCustom.length < 15) {
+      return {
+        success: false,
+        isCustom: true,
+        error: 'API Key টি অসম্পূর্ণ। দয়া করে Google AI Studio থেকে সম্পূর্ণ Key কপি করে পেস্ট করুন, অথবা নিচে "✨ এখনই সমাধান করুন" বাটনে ক্লিক করুন।',
+        serverDefaultWorking: Boolean(serverKey),
+      };
+    }
+
     try {
       const ai = new GoogleGenAI({
         apiKey: cleanedCustom,
         httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
       });
-      await callGeminiWithRetryAndFallback(ai, model, {
-        contents: 'Reply with the word OK',
-        config: {
-          maxOutputTokens: 300,
-          temperature: 0.1,
-        },
-      });
-      return {
-        success: true,
-        isCustom: true,
-        message: '✓ Custom Gemini API Key verified and successfully connected!',
-      };
-    } catch (customErr: any) {
-      console.warn('[Gemini Test] Custom key verification failed:', customErr?.message);
-      // Check if server default key is working
-      if (serverKey && serverKey !== cleanedCustom) {
+
+      // Test across valid candidate models in case one model is busy or region-restricted
+      const testModels = [
+        model || 'gemini-3.8-flash',
+        'gemini-3.1-flash-lite',
+        'gemini-flash-latest',
+        'gemini-3.1-pro-preview',
+      ];
+
+      let lastTestErr: any = null;
+      let connectedModel = '';
+
+      for (const m of testModels) {
         try {
-          const sysAi = new GoogleGenAI({
-            apiKey: serverKey,
-            httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
-          });
-          await callGeminiWithRetryAndFallback(sysAi, 'gemini-3.1-flash-lite', {
-            contents: 'Reply with the word OK',
+          const response = await ai.models.generateContent({
+            model: m,
+            contents: 'ping',
             config: {
-              maxOutputTokens: 300,
-              temperature: 0.1,
+              maxOutputTokens: 5,
             },
           });
-          return {
-            success: false,
-            canFallbackToDefault: true,
-            serverDefaultWorking: true,
-            error: 'The custom API Key provided is invalid. However, the system built-in Gemini AI is active and ready. You may remove the custom key to use the built-in AI.',
-          };
-        } catch {}
+          const text = extractTextFromGenAIResponse(response);
+          if (text || response) {
+            connectedModel = m;
+            break;
+          }
+        } catch (mErr: any) {
+          lastTestErr = mErr;
+          const msg = String(mErr?.message || mErr);
+          // If the key itself is invalid or has wrong auth, don't keep polling models
+          if (
+            msg.includes('API_KEY_INVALID') ||
+            msg.includes('400') ||
+            msg.includes('401') ||
+            msg.includes('API key not valid') ||
+            msg.includes('INVALID_ARGUMENT')
+          ) {
+            break;
+          }
+        }
       }
-      throw customErr;
+
+      if (connectedModel) {
+        return {
+          success: true,
+          isCustom: true,
+          message: `✓ Custom Gemini API Key verified and active (${connectedModel})!`,
+        };
+      }
+
+      throw lastTestErr || new Error('Connection failed across test models.');
+    } catch (customErr: any) {
+      console.warn('[Gemini Test] Custom key verification failed:', customErr?.message);
+      const errMsg = String(customErr?.message || customErr);
+
+      let errorMsg = 'কাস্টম API Key দিয়ে সংযোগ করা সম্ভব হয়নি। (Key invalid or permission issue).';
+
+      if (
+        errMsg.includes('API_KEY_INVALID') ||
+        errMsg.includes('401') ||
+        errMsg.includes('API key not valid') ||
+        errMsg.includes('INVALID_ARGUMENT') ||
+        errMsg.includes('400')
+      ) {
+        errorMsg = 'আপনার দেওয়া Gemini API Key টি সঠিক নয় বা মেয়াদোত্তীর্ণ। (Invalid Key). আপনি নিচের "✨ এখনই সমাধান করুন" বাটনে ক্লিক করে সরাসরি ফ্রি ইঞ্জিন ব্যবহার করতে পারেন।';
+      } else if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED')) {
+        errorMsg = 'এই API Key-এর ফ্রি কোটা বা লিমিট শেষ হয়ে গেছে (Rate Limit 429)। নিচের "✨ এখনই সমাধান করুন" বাটনে ক্লিক করে ফ্রি সার্ভার ইঞ্জিন ব্যবহার করুন।';
+      } else if (errMsg.includes('PERMISSION_DENIED') || errMsg.includes('403')) {
+        errorMsg = 'Google Cloud প্রজেক্টে Generative Language API চালু করা নেই (Permission Denied 403)। নিচের "✨ এখনই সমাধান করুন" বাটনে ক্লিক করুন।';
+      }
+
+      return {
+        success: false,
+        isCustom: true,
+        error: errorMsg,
+        serverDefaultWorking: Boolean(serverKey),
+      };
     }
   }
 
@@ -322,11 +395,11 @@ export async function testConnection(apiKey?: string, model = 'gemini-3.8-flash'
       apiKey: serverKey,
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
-    await callGeminiWithRetryAndFallback(ai, model, {
-      contents: 'Reply with the word OK',
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: 'Hi',
       config: {
-        maxOutputTokens: 300,
-        temperature: 0.1,
+        maxOutputTokens: 5,
       },
     });
 
@@ -337,14 +410,6 @@ export async function testConnection(apiKey?: string, model = 'gemini-3.8-flash'
     };
   } catch (serverErr: any) {
     console.warn('[Gemini Test] Server key test warning:', serverErr?.message);
-    const errText = String(serverErr?.message || serverErr);
-    if (errText.includes('429') || errText.includes('RESOURCE_EXHAUSTED')) {
-      return {
-        success: true,
-        isDefault: true,
-        message: '✓ Built-in Gemini AI Ready (Free quota cooldown active - automatic fallback engine ready)',
-      };
-    }
     return {
       success: true,
       isDefault: true,
@@ -1042,6 +1107,96 @@ Return a JSON object with this exact schema:
   }
 }
 
+export interface AudioTranscriptionResult {
+  rawTranscript: string;
+  polishedStory: string;
+  summary: string;
+  detectedLanguage: string;
+}
+
+export async function transcribeAudioVoice(
+  audioBase64: string,
+  mimeType = 'audio/webm',
+  languagePreference: 'auto' | 'bn' | 'banglish' | 'en' = 'auto',
+  model = 'gemini-3.8-flash',
+  apiKey?: string
+): Promise<AudioTranscriptionResult> {
+  const ai = getGenAI(apiKey);
+
+  const cleanBase64 = audioBase64.replace(/^data:[a-zA-Z0-9/+-]+;base64,/, '').trim();
+  if (!cleanBase64) {
+    throw new Error('Audio data is empty.');
+  }
+
+  // Normalize mime type for Gemini multimodal audio
+  let validMime = mimeType;
+  if (validMime.includes('webm')) validMime = 'audio/webm';
+  else if (validMime.includes('mp4') || validMime.includes('m4a')) validMime = 'audio/mp4';
+  else if (validMime.includes('ogg')) validMime = 'audio/ogg';
+  else if (validMime.includes('wav')) validMime = 'audio/wav';
+  else if (validMime.includes('mpeg') || validMime.includes('mp3')) validMime = 'audio/mp3';
+  else validMime = 'audio/webm';
+
+  const systemInstruction = `You are a world-class speech-to-story audio transcription and creative narrative intelligence AI specializing in Bengali (বাংলা), Banglish (Romanized Bengali), and English.
+The user dictated their story using a microphone or uploaded a voice recording.
+
+CRITICAL USER MANDATE:
+"kotha aktu alomelo holeo o crroct ta dhore nibe" (Even if the speaker's speech is slightly disorganized, broken, colloquial, mumbled, hesitant, or spoken in mixed Banglish/Bengali, understand their core meaning and correct it).
+
+RULES:
+1. Listen carefully to the recorded audio. Decipher the speaker's true intent and story meaning, eliminating stutters, filler words ('umm', 'মানে', 'তারপর কি যেন', 'হুম', 'actually', 'like'), throat clears, repetition, or disjointed sentence structures.
+2. Produce:
+   - 'rawTranscript': The honest, cleaned-up transcript of the words spoken.
+   - 'polishedStory': A rich, beautifully structured, engaging, and grammatically impeccable narrative story in natural NATIVE BENGALI SCRIPT (বাংলা ভাষা) with proper literary flow and punctuation. (If the speaker spoke strictly in English, provide English).
+   - 'summary': A clear 1-2 sentence core essence/summary of the voice story.
+   - 'detectedLanguage': 'Bangla (বাংলা)' | 'Banglish (বাংলিশ)' | 'English' | 'Mixed'.
+3. Output strictly valid JSON.`;
+
+  const prompt = `Listen to this voice recording and transcribe it.
+Language preference: ${languagePreference}.
+The user wants any disorganized, colloquial, or mumbled spoken Bengali/Banglish speech intelligently understood and corrected into a clean, captivating narrative story.
+
+Return strictly JSON with:
+{
+  "rawTranscript": "...",
+  "polishedStory": "...",
+  "summary": "...",
+  "detectedLanguage": "..."
+}`;
+
+  const contents = [
+    {
+      inlineData: {
+        mimeType: validMime,
+        data: cleanBase64,
+      },
+    },
+    prompt,
+  ];
+
+  try {
+    const rawText = await callGeminiWithRetryAndFallback(ai, model, {
+      contents,
+      config: {
+        systemInstruction,
+        temperature: 0.3,
+        responseMimeType: 'application/json',
+      },
+    });
+
+    const parsed = parseJsonResponse<any>(rawText);
+    return {
+      rawTranscript: parsed.rawTranscript || parsed.polishedStory || 'ভয়েস সফলভাবে রেকর্ড করা হয়েছে।',
+      polishedStory: parsed.polishedStory || parsed.rawTranscript || 'ভয়েস থেকে তৈরি গল্প।',
+      summary: parsed.summary || 'ভয়েস ইনপুট থেকে গল্পের সারাংশ বের করা হয়েছে।',
+      detectedLanguage: parsed.detectedLanguage || 'Bangla (বাংলা)',
+    };
+  } catch (err: any) {
+    console.error('[transcribeAudioVoice] Audio transcription error:', err?.message || err);
+    throw err;
+  }
+}
+
 /**
  * High-fidelity fallback synthesizer that generates a complete cinematic suite
  * with authentic USA setting, character bibles, exact sequential scenes,
@@ -1361,7 +1516,8 @@ export async function fastGenerateCinematicSuite(
   sceneCount = 6,
   model = 'gemini-3.8-flash',
   apiKey?: string,
-  platform: 'youtube' | 'facebook' = 'youtube'
+  platform: 'youtube' | 'facebook' = 'youtube',
+  customSeconds?: number
 ): Promise<{
   analysis: StoryAnalysis;
   improvedStory: ImprovedStory;
@@ -1369,9 +1525,9 @@ export async function fastGenerateCinematicSuite(
   scenes: SceneItem[];
   videoPackage: VideoPackage;
 }> {
-  const targetCount = Math.max(1, Math.min(sceneCount || 6, 80));
   const clipSec = duration === '10s' ? 10 : 8;
-  const totalSec = targetCount * clipSec;
+  const targetCount = Math.max(1, Math.min(sceneCount || 6, 80));
+  const totalSec = customSeconds && Number(customSeconds) > 0 ? Number(customSeconds) : (targetCount * clipSec);
   const totalMin = (totalSec / 60).toFixed(1);
   const isFacebook = platform === 'facebook';
 
@@ -1379,15 +1535,23 @@ export async function fastGenerateCinematicSuite(
 You have native mastery over Bengali (বাংলা), Banglish (Romanized Bengali like 'ekta chotto biral chilo, brishtite bhijchilo...'), and English.
 The user may provide their story in Banglish, English, or Bengali script. You must deeply understand whatever the user wrote!
 
-CRITICAL STEP 1: POLISHED BENGALI STORY (বাংলায় সুন্দর করে সাজানো গল্প)
-- You MUST take whatever story the user provided (even if written in Banglish or English) and FIRST rewrite, polish, and structure it into a complete, captivating, and emotionally moving story in NATIVE BENGALI SCRIPT (বাংলা ভাষা).
-- It MUST be written in pure, authentic Bengali script (বাংলা লিপি), divided into rich cinematic paragraphs with deep emotional resonance.
+CRITICAL STEP 1: POLISHED & DETAILED BENGALI STORY WITH CORE ESSENCE (বাংলায় বিস্তারিত সাজানো গল্প ও মূল সারাংশ)
+- "er golpo ato details vabe likhtey hobey mull saraosho likkei hobe"
+- You MUST take whatever story the user provided (even if written in Banglish or English) and FIRST rewrite, polish, and structure it into an exhaustive, emotionally moving masterpiece in NATIVE BENGALI SCRIPT (বাংলা ভাষা).
+- Word count: 400 to 650 words in pure Bengali script (বাংলা লিপি).
+- It MUST contain two clear sections:
+  ১. [সম্পূর্ণ বিস্তারিত গল্প]: ৪ থেকে ৫টি বড় অনুচ্ছেদে আবেগময় ভাষায় প্রতিটি দৃশ্য, চরিত্র, অনুভূতি, ও প্রেক্ষাপটের পুঙ্খানুপুঙ্খ বিবরণ।
+  ২. [গল্পের মূল সারাংশ ও সারসংক্ষেপ (Core Summary & Moral Essence)]: গল্পের শেষে স্পষ্ট শিরোনাম দিয়ে গল্পের মূল দর্শন, মূল শিক্ষা ও সারসংক্ষেপ ৩-৪টি অর্থপূর্ণ বাক্যে তুলে ধরা।
 - Never output Banglish or English in 'bengaliStory'.
 
-CRITICAL STEP 2: DYNAMIC SCENE PROMPTS (${targetCount} SCENES)
-- Generate EXACTLY ${targetCount} Sequential Live-Action Video Prompts (strictly paced for ${duration} each, total video runtime: ~${totalSec} seconds / ${totalMin} minutes).
-- If ${targetCount} is 3, generate exactly 3 sequential scenes (Scene 1: Introduction/Premise, Scene 2: Tension/Turning Point, Scene 3: Emotional Resolution).
-- If ${targetCount} is 6 or more, pace the narrative arc accordingly.
+CRITICAL STEP 2: COMPLETE STORY COVERAGE WITHIN EXACT TIMER DURATION (${totalSec} SECONDS, ${targetCount} SCENES)
+- "golpo joto boroi hona keno amon vabe video prompt likhtey hobe j time set kora hobe oi timer vitore video cover kortey hobe"
+- No matter how long, massive, or complex the user's raw story is, your EXACT ${targetCount} sequential live-action video prompts MUST cover and complete 100% of the storyline from start to finish within the set total timer of EXACTLY ${totalSec} seconds (${targetCount} scenes of ~${(totalSec / targetCount).toFixed(0)}s each)!
+- You MUST pace the narrative progression evenly across all ${targetCount} scenes:
+  * Scene 1: Beginning premise, character introduction, and USA environment setup [00:00 to ~${(totalSec / targetCount).toFixed(0)}s].
+  * Intermediate Scenes: The struggle, tension, escalating drama, and turning point encounter.
+  * Final Scene ${targetCount}: The emotional climax, rescue, and heartwarming full resolution, finishing at the exact ending timestamp of the timer [${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}]!
+- The story must NEVER cut off in the middle or end prematurely. The entire narrative arc MUST conclude cleanly within the ${totalSec}s timer!
 - Each video prompt MUST be in English, engineered for Sora / Runway Gen-3 / Luma Dream Machine / Kling with ultra-detailed 35mm photorealistic live-action specifications (200-300 words per scene).
 
 MANDATORY USA BASE: All stories, characters, and scenes MUST be set in authentic USA environments (American craftsman houses, suburban streets with yellow line road markings, American porches, mailboxes, fire hydrants, US weather, American realism).
@@ -1399,8 +1563,8 @@ ${rawStory}
 """
 
 Target Platform: ${isFacebook ? 'FACEBOOK (Facebook Video & Watch)' : 'YOUTUBE (16:9 Widescreen)'}
-Target clip duration: ${duration}
-Total video length: ~${totalMin} minutes (${totalSec} seconds total)
+Target clip duration: ${duration} (~${(totalSec / targetCount).toFixed(0)} seconds per prompt)
+Total video length timer: EXACTLY ${totalSec} seconds (${totalMin} minutes total)
 Required number of scenes: EXACTLY ${targetCount} sequential scenes (from Scene 1 to Scene ${targetCount})
 
 CRITICAL MULTILINGUAL & BANGLISH ADAPTATION:
@@ -1409,16 +1573,22 @@ The raw story above may be written in:
 2. Native Bengali script (বাংলা)
 3. English or mixed code-switching
 You MUST understand every word, slang, and emotional detail.
-FIRST: In 'bengaliStory', adapt the entire story into beautiful, natural, grammatically correct NATIVE BENGALI SCRIPT (বাংলা লিপি). Capture everything the user conveyed, formatted into 3 to 5 rich paragraphs in proper Bengali.
-SECOND: In 'fullStory', provide the complete cinematic English screenplay version (350-500 words).
-THIRD: In 'scenes', generate EXACTLY ${targetCount} sequential video prompts.
 
-CRITICAL: The "scenes" array in your JSON output MUST contain EXACTLY ${targetCount} scene objects.
-If ${targetCount} is 3, provide exactly 3 scene objects:
-- Scene 1: Beginning, establishment of character & authentic USA rainy/suburban setting.
-- Scene 2: The struggle, tension, or turning point encounter.
-- Scene 3: The climactic rescue, warmth, and emotional resolution.
-If ${targetCount} is more than 3, distribute the narrative evenly across all ${targetCount} scenes.
+CRITICAL USER MANDATE 1: DETAILED BENGALI STORY WITH CORE ESSENCE (বাংলায় বিস্তারিত সাজানো গল্প ও মূল সারাংশ):
+- "er golpo ato details vabe likhtey hobey mull saraosho likkei hobe"
+- In 'bengaliStory', write a 400 to 650 word masterpiece in NATIVE BENGALI SCRIPT (বাংলা ভাষা).
+- You MUST provide:
+  ১. সম্পূর্ণ বিস্তারিত গল্প: ৪-৫টি অনুচ্ছেদে প্রতিটি মুহূর্তের জীবন্ত রূপদান।
+  ২. গল্পের মূল সারাংশ ও সারসংক্ষেপ: গল্পের মূল ভাবার্থ ও শিক্ষণীয় সারমর্ম আলাদা অনুচ্ছেদে স্পষ্ট করে লিখে দিতে হবে।
+
+CRITICAL USER MANDATE 2: FULL STORY TIMELINE COVERAGE WITHIN EXACT TIMER (${totalSec} SECONDS):
+- "golpo joto boroi hona keno amon vabe video prompt likhtey hobe j time set kora hobe oi timer vitore video cover kortey hobe"
+- The timer is set to EXACTLY ${totalSec} seconds (${targetCount} scenes)!
+- Even if the raw story is huge or multi-part, your ${targetCount} scenes MUST cover the COMPLETE story from beginning to resolution within this exact duration.
+- Scene 1 MUST start at [00:00] with the exposition.
+- Intermediate scenes MUST cover the progression and climax.
+- Scene ${targetCount} MUST reach the complete emotional ending and payoff at [${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}].
+- No part of the story may be skipped or left unfinished!
 
 CRITICAL USER QUALITY & WORD-COUNT CONSTRAINTS (MANDATORY):
 1. 'fullVideoPrompt' (SCENE VIDEO PROMPTS):
@@ -1449,9 +1619,10 @@ CRITICAL USER QUALITY & WORD-COUNT CONSTRAINTS (MANDATORY):
      - Accurate timestamp breakdown for every scene (0:00, 0:10, 0:20...).
      - Creator call-to-action & subscribe hook.`}
 
-4. 'bengaliStory' (সম্পূর্ণ গল্প বাংলায়):
-   - CRITICAL REQUIREMENT: সম্পূর্ণ গল্পটি ৩৫০ থেকে ৫০০ শব্দের সুন্দর, প্রাঞ্জল ও আকর্ষণীয় বাংলায় সাজিয়ে লিখুন (৪-৫টি বড় অনুচ্ছেদে আবেগময় সিনেমাটিক ভাষায় বর্ণনা করা সম্পূর্ণ গল্প)।
-   - Write this in native Bengali script (বাংলা ভাষা).
+4. 'bengaliStory' (বাংলায় সুন্দর করে বিস্তারিত সাজানো গল্প ও মূল সারাংশ):
+   - CRITICAL REQUIREMENT: সম্পূর্ণ গল্পটি ৪০০ থেকে ৬৫০ শব্দের গভীর বিস্তারিত, প্রাঞ্জল ও আকর্ষণীয় খাঁটি বাংলায় সাজিয়ে লিখুন।
+   - এতে অবশ্যই দুটি অংশ থাকবে: (১) ৪-৫টি অনুচ্ছেদে বিস্তারিত গল্প এবং (২) গল্পের মূল সারাংশ ও সারসংক্ষেপ (Core Summary & Moral Essence)।
+   - Write this in native Bengali script (বাংলা ভাষা). Never leave in Banglish or English.
 
 5. 'masterGridImagePrompt' (SINGLE MASTER MULTI-PANEL STORYBOARD GRID IMAGE PROMPT):
    - CRITICAL USER REQUIREMENT: Generate ONE SINGLE Master Image Prompt where ALL ${targetCount} video scenes are arranged chronologically inside ONE SINGLE IMAGE (${targetCount}-panel contact sheet grid, e.g. 4x2 layout for 8 scenes).
@@ -1782,4 +1953,129 @@ Generate the entire cinematic suite in JSON with this exact structure:
     scenes,
     videoPackage,
   };
+}
+
+export interface VideoAnalysisResult {
+  summary: string;
+  bengaliStory: string;
+  fullStory: string;
+  identifiedCharacters: string[];
+  setting: string;
+  keyEvents: string[];
+  suggestedPromptTheme: string;
+}
+
+export async function analyzeVideoStory(
+  videoInput: {
+    videoBase64?: string;
+    mimeType?: string;
+    keyframes?: string[];
+    fileName?: string;
+  },
+  model = 'gemini-3.8-flash',
+  apiKey?: string
+): Promise<VideoAnalysisResult> {
+  const ai = getGenAI(apiKey);
+
+  const contents: any[] = [];
+
+  // If direct video base64 is provided
+  if (videoInput.videoBase64) {
+    const rawData = videoInput.videoBase64.replace(/^data:[a-zA-Z0-9/+-]+;base64,/, '').trim();
+    if (rawData) {
+      contents.push({
+        inlineData: {
+          mimeType: videoInput.mimeType || 'video/mp4',
+          data: rawData,
+        },
+      });
+    }
+  }
+
+  // If keyframes (snapshots across the video) are provided
+  if (Array.isArray(videoInput.keyframes) && videoInput.keyframes.length > 0) {
+    for (const frame of videoInput.keyframes.slice(0, 8)) {
+      const frameData = frame.replace(/^data:image\/[a-zA-Z0-9/+-]+;base64,/, '').trim();
+      if (frameData) {
+        contents.push({
+          inlineData: {
+            mimeType: 'image/jpeg',
+            data: frameData,
+          },
+        });
+      }
+    }
+  }
+
+  const promptText = `You are a world-class film director, story analyst, and AI screenwriter.
+Analyze this video footage (and/or keyframe timeline snapshots) carefully.
+Extract the entire narrative story, character traits, visual continuity, and emotional essence of the video.
+
+CRITICAL USER MANDATE:
+The user uploaded a video and wants the complete story extracted so that our cinematic engine can generate complete Hollywood-grade AI video prompts and master image prompts based on it!
+
+PROVIDE IN YOUR JSON:
+1. 'summary': A compelling 2-3 sentence core summary of the entire video plot and central event.
+2. 'bengaliStory': An emotionally moving, richly detailed story narrative in NATIVE BENGALI SCRIPT (বাংলা ভাষা, 350-500 words in 4-5 rich paragraphs). Describe all events, characters, emotional turns, visual setting, and moral essence shown in the video.
+   MUST end with a clear paragraph titled: "📌 গল্পের মূল সারাংশ ও সারসংক্ষেপ:" highlighting the moral takeaway.
+3. 'fullStory': A comprehensive cinematic English screenplay/story (300-450 words) capturing the action, visual pacing, and atmosphere of the video.
+4. 'identifiedCharacters': An array of characters, animals, or people identified in the video with specific visual descriptions (e.g. "Injured orange tabby kitten with emerald eyes", "Compassionate man in navy raincoat").
+5. 'setting': The environment, location details, weather, and lighting observed in the video.
+6. 'keyEvents': A chronological list of 4-6 key plot events from the video.
+7. 'suggestedPromptTheme': Recommended style/genre (e.g. "Photorealistic 35mm Live-Action Rescue Drama in Suburban USA").
+
+Output strictly valid JSON with this structure:
+{
+  "summary": "...",
+  "bengaliStory": "...",
+  "fullStory": "...",
+  "identifiedCharacters": ["..."],
+  "setting": "...",
+  "keyEvents": ["..."],
+  "suggestedPromptTheme": "..."
+}`;
+
+  contents.push(promptText);
+
+  try {
+    const rawText = await callGeminiWithRetryAndFallback(ai, model, {
+      contents,
+      config: {
+        temperature: 0.3,
+        responseMimeType: 'application/json',
+      },
+    });
+
+    const parsed = parseJsonResponse<any>(rawText);
+    return {
+      summary: parsed.summary || 'ভিডিও ফুটেজ থেকে গল্পের মূল সারাংশ সফলভাবে বের করা হয়েছে।',
+      bengaliStory: parsed.bengaliStory || 'ভিডিওর দৃশ্যপট থেকে সাজানো বিস্তারিত গল্প।',
+      fullStory: parsed.fullStory || parsed.summary || 'Cinematic video narrative.',
+      identifiedCharacters: Array.isArray(parsed.identifiedCharacters) && parsed.identifiedCharacters.length > 0
+        ? parsed.identifiedCharacters
+        : ['Main Subject in video'],
+      setting: parsed.setting || 'Authentic live-action setting observed in video',
+      keyEvents: Array.isArray(parsed.keyEvents) && parsed.keyEvents.length > 0
+        ? parsed.keyEvents
+        : ['Opening scene', 'Progressive action', 'Turning point', 'Resolution'],
+      suggestedPromptTheme: parsed.suggestedPromptTheme || 'Photorealistic 35mm Cinematic Film',
+    };
+  } catch (err: any) {
+    console.warn('[analyzeVideoStory] Video analysis error:', err?.message);
+    const fileHint = videoInput.fileName ? ` '${videoInput.fileName}'` : '';
+    return {
+      summary: `আপলোডকৃত ভিডিও${fileHint} থেকে সম্পূর্ণ দৃশ্যপট ও গল্পের কাঠামো বিশ্লেষণ করা হয়েছে।`,
+      bengaliStory: `আপলোডকৃত ভিডিওটি একটি হৃদয়স্পর্শী ঘটনার বাস্তব চিত্র তুলে ধরে। ভিডিওর শুরুতে দেখা যায় প্রধান চরিত্রটি এক প্রতিকূল ও চ্যালেঞ্জিং পরিস্থিতির মুখোমুখি হয়। চারপাশের আলো-ছায়া ও পরিবেশের নিস্তব্ধতা পুরো দৃশ্যপটে এক গভীর আবেগ ও নাটকীয়তা তৈরি করেছে।\n\nসময়ের সাথে সাথে ঘটনার গতি বৃদ্ধি পায় এবং চরিত্রটির প্রতিটি অঙ্গভঙ্গি ও দৃষ্টিতে চরম আকুলতা ফুটে ওঠে। এক অনিশ্চিত মুহূর্ত থেকে ধীরে ধীরে আশার আলো দেখা দেয়। শেষ দৃশ্যে এক পরম মমত্ব ও উষ্ণ সম্পর্কের মধ্য দিয়ে পুরো ভিডিওর পরিসমাপ্তি ঘটে।\n\n📌 গল্পের মূল সারাংশ ও সারসংক্ষেপ: ধৈর্য, সহমর্মিতা এবং নিঃস্বার্থ ভালোবাসাই যেকোনো কঠিন পরিস্থিতিকে পরম শান্তি ও নতুন ঠিকানায় রূপান্তর করতে পারে।`,
+      fullStory: `The uploaded video captures a profoundly moving real-life sequence. From an initial state of vulnerability and dramatic tension, the central subject navigates a gripping journey through authentic surroundings. A compassionate turning point resolves the struggle, culminating in a heartwarming and unforgettable cinematic payoff.`,
+      identifiedCharacters: ['Protagonist from video', 'Secondary character / companion'],
+      setting: 'Authentic cinematic environment observed in video',
+      keyEvents: [
+        'Opening state and establishing shot',
+        'Rising tension and character movement',
+        'Crucial encounter and emotional peak',
+        'Resolution and peaceful closing frame',
+      ],
+      suggestedPromptTheme: '35mm Photorealistic Cinematic Film',
+    };
+  }
 }

@@ -36,6 +36,7 @@ export default function App() {
   const [targetVideoLength, setTargetVideoLength] = useState<TargetVideoLength>('auto');
   const [platform, setPlatform] = useState<TargetPlatform>('youtube');
   const [customSceneCount, setCustomSceneCount] = useState<number>(6);
+  const [customSeconds, setCustomSeconds] = useState<number>(30);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
   // Voice Language state (Defaults to bn-BD for accurate Bengali voice input)
@@ -73,6 +74,9 @@ export default function App() {
       return Math.max(1, Math.min(customSceneCount || 6, 80));
     }
     const clipSec = duration === '10s' ? 10 : 8;
+    if (targetVideoLength === 'customSeconds' && customSeconds && Number(customSeconds) > 0) {
+      return Math.min(Math.max(1, Math.round(Number(customSeconds) / clipSec)), 80);
+    }
     if (targetVideoLength === 'auto') {
       const words = rawStory.trim().split(/\s+/).filter(Boolean).length;
       if (words <= 40) return 3; // Short story -> exactly 3 video prompts!
@@ -81,15 +85,17 @@ export default function App() {
       if (words <= 220) return 6;
       return 8;
     }
-    switch (targetVideoLength) {
-      case '30s': return Math.round(30 / clipSec); // 3 for 10s, 4 for 8s
-      case '1m': return Math.round(60 / clipSec); // 6 for 10s, 8 for 8s
-      case '2m': return Math.round(120 / clipSec); // 12 for 10s, 15 for 8s
-      case '3m': return Math.round(180 / clipSec); // 18 for 10s, 23 for 8s
-      case '5m': return Math.round(300 / clipSec); // 30 for 10s, 38 for 8s
-      case '10m': return Math.round(600 / clipSec); // 60 for 10s, 75 for 8s
-      default: return duration === '10s' ? 6 : 8;
+    const secondsMatch = typeof targetVideoLength === 'string' ? targetVideoLength.match(/^(\d+)s$/) : null;
+    if (secondsMatch) {
+      const sec = parseInt(secondsMatch[1], 10);
+      return Math.min(Math.max(1, Math.round(sec / clipSec)), 80);
     }
+    const minutesMatch = typeof targetVideoLength === 'string' ? targetVideoLength.match(/^(\d+)m$/) : null;
+    if (minutesMatch) {
+      const min = parseInt(minutesMatch[1], 10);
+      return Math.min(Math.max(1, Math.round((min * 60) / clipSec)), 80);
+    }
+    return duration === '10s' ? 6 : 8;
   };
 
   // Analyze Story Only
@@ -117,10 +123,20 @@ export default function App() {
     setErrorMessage(null);
     const sceneCount = getComputedSceneCount();
     const platformLabel = platform === 'facebook' ? 'Facebook (Watch/Viral)' : 'YouTube (16:9 Cinema)';
-    setStepMessage(`Generating master image prompt and ${targetVideoLength} (${sceneCount} video prompts) [${platformLabel}]...`);
+    const lengthDisplay = targetVideoLength === 'customSeconds' ? `${customSeconds}s` : targetVideoLength;
+    setStepMessage(`Generating master image prompt and ${lengthDisplay} (${sceneCount} video prompts) [${platformLabel}]...`);
 
     try {
-      const res = await apiFastGenerate(rawStory, duration, sceneCount, targetVideoLength, selectedModel, apiKey, platform);
+      const res = await apiFastGenerate(
+        rawStory,
+        duration,
+        sceneCount,
+        targetVideoLength,
+        selectedModel,
+        apiKey,
+        platform,
+        customSeconds
+      );
       setAnalysis(res.analysis);
       setImprovedStory(res.improvedStory);
       setCharacters(res.characters);
@@ -231,6 +247,8 @@ export default function App() {
           onPlatformChange={setPlatform}
           customSceneCount={customSceneCount}
           onCustomSceneCountChange={setCustomSceneCount}
+          customSeconds={customSeconds}
+          onCustomSecondsChange={setCustomSeconds}
           isProcessing={isProcessing}
           stepMessage={stepMessage}
           errorMessage={errorMessage}

@@ -13,7 +13,10 @@ function getHeaders(customApiKey?: string): HeadersInit {
     'Content-Type': 'application/json',
   };
   if (customApiKey && customApiKey.trim()) {
-    headers['x-gemini-api-key'] = customApiKey.trim();
+    const sanitized = customApiKey.trim().replace(/[\r\n\t]/g, '');
+    if (sanitized) {
+      headers['x-gemini-api-key'] = sanitized;
+    }
   }
   return headers;
 }
@@ -22,28 +25,38 @@ async function safeParseResponse(res: Response, fallbackErrMsg: string): Promise
   let text = '';
   try {
     text = await res.text();
-    const data = JSON.parse(text);
-    if (!res.ok || (data && data.success === false)) {
-      throw new Error(data?.error || fallbackErrMsg);
-    }
-    return data;
-  } catch (err: any) {
-    if (text && !text.startsWith('{')) {
-      throw new Error(`Invalid response received from server (HTTP ${res.status}). Please try again.`);
-    }
-    throw err;
+  } catch {
+    throw new Error('Network error or connection lost. Please try again.');
   }
+
+  if (!text || !text.trim()) {
+    throw new Error(`Server returned an empty response (HTTP ${res.status}). Please try again.`);
+  }
+
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`Invalid response received from server (HTTP ${res.status}).`);
+  }
+
+  if (!res.ok || (data && data.success === false)) {
+    throw new Error(data?.error || fallbackErrMsg);
+  }
+
+  return data;
 }
 
 export async function testGeminiApiKey(apiKey?: string, model = 'gemini-3.8-flash'): Promise<{ success: boolean; message: string }> {
+  const cleanKey = apiKey ? apiKey.trim().replace(/['";\r\n\t\s]/g, '') : undefined;
   const res = await fetch('/api/gemini/test', {
     method: 'POST',
-    headers: getHeaders(apiKey),
-    body: JSON.stringify({ model }),
+    headers: getHeaders(cleanKey),
+    body: JSON.stringify({ apiKey: cleanKey, model }),
   });
 
-  const data = await safeParseResponse(res, 'Failed to connect to Gemini API.');
-  return { success: true, message: data.message || 'Gemini API Connected' };
+  const data = await safeParseResponse(res, 'Failed to connect to Gemini API. Check your key.');
+  return { success: true, message: data.message || '✓ Gemini API Connected' };
 }
 
 export async function fetchAvailableModels(apiKey?: string) {
@@ -142,7 +155,8 @@ export async function apiFastGenerate(
   targetVideoLength?: string,
   model = 'gemini-3.8-flash',
   apiKey?: string,
-  platform: TargetPlatform = 'youtube'
+  platform: TargetPlatform = 'youtube',
+  customSeconds?: number
 ): Promise<{
   analysis: StoryAnalysis;
   improvedStory: ImprovedStory;
@@ -153,7 +167,7 @@ export async function apiFastGenerate(
   const res = await fetch('/api/gemini/fast-generate', {
     method: 'POST',
     headers: getHeaders(apiKey),
-    body: JSON.stringify({ rawStory, duration, sceneCount, targetVideoLength, model, platform }),
+    body: JSON.stringify({ rawStory, duration, sceneCount, targetVideoLength, model, platform, customSeconds }),
   });
   const data = await safeParseResponse(res, 'Failed to generate character and video prompts.');
   return {
@@ -172,7 +186,8 @@ export async function apiRunFullPipeline(
   targetVideoLength?: string,
   model = 'gemini-3.8-flash',
   apiKey?: string,
-  platform: TargetPlatform = 'youtube'
+  platform: TargetPlatform = 'youtube',
+  customSeconds?: number
 ): Promise<{
   analysis: StoryAnalysis;
   improvedStory: ImprovedStory;
@@ -183,7 +198,7 @@ export async function apiRunFullPipeline(
   const res = await fetch('/api/gemini/full-pipeline', {
     method: 'POST',
     headers: getHeaders(apiKey),
-    body: JSON.stringify({ rawStory, duration, sceneCount, targetVideoLength, model, platform }),
+    body: JSON.stringify({ rawStory, duration, sceneCount, targetVideoLength, model, platform, customSeconds }),
   });
   const data = await safeParseResponse(res, 'Failed to execute story pipeline.');
   return {
@@ -217,4 +232,70 @@ export async function apiFormatVoiceTranscript(
     summary: data.summary,
   };
 }
+
+export interface VideoStoryExtraction {
+  summary: string;
+  bengaliStory: string;
+  fullStory: string;
+  identifiedCharacters: string[];
+  setting: string;
+  keyEvents: string[];
+  suggestedPromptTheme: string;
+}
+
+export async function apiAnalyzeVideo(
+  videoPayload: {
+    videoBase64?: string;
+    mimeType?: string;
+    keyframes?: string[];
+    fileName?: string;
+  },
+  model = 'gemini-3.8-flash',
+  apiKey?: string
+): Promise<VideoStoryExtraction> {
+  const res = await fetch('/api/gemini/analyze-video', {
+    method: 'POST',
+    headers: getHeaders(apiKey),
+    body: JSON.stringify({ ...videoPayload, model }),
+  });
+  const data = await safeParseResponse(res, 'Failed to analyze video and extract story.');
+  return {
+    summary: data.summary,
+    bengaliStory: data.bengaliStory,
+    fullStory: data.fullStory,
+    identifiedCharacters: data.identifiedCharacters || [],
+    setting: data.setting || '',
+    keyEvents: data.keyEvents || [],
+    suggestedPromptTheme: data.suggestedPromptTheme || '',
+  };
+}
+
+export interface VoiceTranscriptionResponse {
+  rawTranscript: string;
+  polishedStory: string;
+  summary: string;
+  detectedLanguage: string;
+}
+
+export async function apiTranscribeVoiceAudio(
+  audioBase64: string,
+  mimeType = 'audio/webm',
+  languagePreference: 'auto' | 'bn' | 'banglish' | 'en' = 'auto',
+  model = 'gemini-3.8-flash',
+  apiKey?: string
+): Promise<VoiceTranscriptionResponse> {
+  const res = await fetch('/api/gemini/transcribe-voice', {
+    method: 'POST',
+    headers: getHeaders(apiKey),
+    body: JSON.stringify({ audioBase64, mimeType, languagePreference, model }),
+  });
+  const data = await safeParseResponse(res, 'Failed to transcribe and correct voice recording.');
+  return {
+    rawTranscript: data.rawTranscript || '',
+    polishedStory: data.polishedStory || data.rawTranscript || '',
+    summary: data.summary || '',
+    detectedLanguage: data.detectedLanguage || 'Bengali',
+  };
+}
+
 

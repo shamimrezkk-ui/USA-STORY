@@ -1,6 +1,22 @@
 export type VideoDuration = '8s' | '10s';
 
-export type TargetVideoLength = 'auto' | '30s' | '1m' | '2m' | '3m' | '5m' | '10m' | 'custom';
+export type TargetVideoLength =
+  | 'auto'
+  | '15s'
+  | '30s'
+  | '45s'
+  | '60s'
+  | '90s'
+  | '120s'
+  | '180s'
+  | '300s'
+  | 'customSeconds'
+  | '1m'
+  | '2m'
+  | '3m'
+  | '5m'
+  | '10m'
+  | 'custom';
 
 export type TargetPlatform = 'youtube' | 'facebook';
 
@@ -124,6 +140,7 @@ export interface CompleteProjectState {
   duration: VideoDuration;
   platform?: TargetPlatform;
   targetVideoLength?: TargetVideoLength;
+  customSeconds?: number;
   targetSceneCount?: number;
   selectedModel: string;
   analysis: StoryAnalysis | null;
